@@ -1,0 +1,158 @@
+{% extends "base.html" %}
+{% block title %}{{ job.title }} - ATSchecker{% endblock %}
+
+{% block content %}
+<a href="/" class="back-link">&larr; Back to Dashboard</a>
+
+<div class="job-header">
+    <h1>{{ job.title }}</h1>
+    <div class="job-meta">
+        <span>&#127970; {{ job.company }}</span>
+        <span>&#128205; {{ job.location }}</span>
+        <span><span class="badge badge-source">{{ job.source }}</span></span>
+        <span>&#128197; {{ job.posted_date or 'Date unknown' }}</span>
+        {% if is_recent %}<span class="badge badge-new">Posted within 24h</span>{% endif %}
+        {% if is_thesis %}<span class="badge badge-thesis">Master Thesis</span>{% endif %}
+    </div>
+    {% if job.url %}
+    <a href="{{ job.url }}" target="_blank" rel="noopener" class="btn btn-secondary btn-sm" style="margin-top:12px;">
+        Open Original Posting &#8599;
+    </a>
+    {% endif %}
+</div>
+
+<!-- Match Breakdown -->
+{% if match_info %}
+<div class="card">
+    <div class="card-title">Match Analysis</div>
+    <div class="match-breakdown">
+        <div class="match-stat">
+            <div class="match-stat-value" style="color:{{ 'var(--accent-green)' if match_info.overall_score >= 55 else 'var(--accent-yellow)' if match_info.overall_score >= 35 else 'var(--accent-red)' }}">
+                {{ "%.0f"|format(match_info.overall_score) }}%
+            </div>
+            <div class="match-stat-label">Overall Score</div>
+        </div>
+        <div class="match-stat">
+            <div class="match-stat-value">{{ "%.0f"|format(match_info.keyword_score) }}%</div>
+            <div class="match-stat-label">Keyword Match</div>
+        </div>
+        <div class="match-stat">
+            <div class="match-stat-value">{{ "%.0f"|format(match_info.tfidf_score) }}%</div>
+            <div class="match-stat-label">TF-IDF Similarity</div>
+        </div>
+        <div class="match-stat">
+            <div class="match-stat-value">{{ match_info.confidence }}</div>
+            <div class="match-stat-label">Confidence</div>
+        </div>
+    </div>
+
+    {% if match_info.matched_skills %}
+    <div style="margin-top:12px;">
+        <strong style="font-size:0.85rem;">Matched Skills:</strong>
+        <div class="skills-gap">
+            {% for s in match_info.matched_skills %}
+            <span class="skill-tag skill-have">{{ s }}</span>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    {% if match_info.missing_skills %}
+    <div style="margin-top:12px;">
+        <strong style="font-size:0.85rem;">Missing Skills:</strong>
+        <div class="skills-gap">
+            {% for s in match_info.missing_skills[:10] %}
+            <span class="skill-tag skill-missing">{{ s }}</span>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    {% if match_info.warnings %}
+    <div style="margin-top:12px;">
+        <strong style="font-size:0.85rem;color:var(--accent-yellow);">Warnings:</strong>
+        <ul style="font-size:0.82rem;color:var(--text-secondary);margin-top:4px;">
+            {% for w in match_info.warnings %}
+            <li>{{ w }}</li>
+            {% endfor %}
+        </ul>
+    </div>
+    {% endif %}
+</div>
+{% endif %}
+
+<!-- Job Description -->
+<div class="card">
+    <div class="card-title">Job Description</div>
+    <div class="job-description">{{ job.description or 'No description available. Click "Open Original Posting" to view on the source website.' }}</div>
+</div>
+
+<!-- Ollama Cover Letter Analysis -->
+<div class="card">
+    <div class="card-header">
+        <div class="card-title" style="color:var(--accent-purple);">&#129302; Cover Letter Analysis (AI)</div>
+        <button class="btn btn-purple" onclick="analyzeJob({{ job_id }})" id="btn-analyze"
+                {{ 'disabled' if not cv_data }}>
+            &#9889; Generate Cover Letter Points
+        </button>
+    </div>
+    {% if not cv_data %}
+    <p class="status-msg">Upload or compile your CV first to enable AI analysis.</p>
+    {% else %}
+    <p class="status-msg" style="font-size:0.8rem;color:var(--text-muted);">
+        Uses local Ollama llama3.1:8b model. Click the button to analyze this job against your CV.
+    </p>
+    {% endif %}
+    <div id="analysis-status" class="status-msg" style="display:none;"></div>
+    <div id="analysis-result" class="analysis-panel" style="display:none;">
+        <h2>&#128221; Cover Letter Suggestions</h2>
+        <div id="analysis-content" class="analysis-content"></div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function analyzeJob(jobId) {
+    const btn = document.getElementById('btn-analyze');
+    const statusEl = document.getElementById('analysis-status');
+    const resultEl = document.getElementById('analysis-result');
+    const contentEl = document.getElementById('analysis-content');
+
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Analyzing with Ollama...';
+    statusEl.style.display = 'block';
+    statusEl.className = 'status-msg';
+    statusEl.textContent = 'Running llama3.1:8b analysis... This may take 30-60 seconds.';
+    resultEl.style.display = 'none';
+
+    fetch('/api/analyze/' + jobId, { method: 'POST' })
+        .then(r => r.json())
+        .then(data => {
+            btn.disabled = false;
+            btn.innerHTML = '&#9889; Re-analyze';
+
+            if (data.success) {
+                statusEl.style.display = 'none';
+                resultEl.style.display = 'block';
+                // Convert markdown to basic HTML
+                let html = data.analysis
+                    .replace(/### (.*)/g, '<h3>$1</h3>')
+                    .replace(/## (.*)/g, '<h3>$1</h3>')
+                    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                    .replace(/^- (.*)/gm, '&bull; $1<br>');
+                contentEl.innerHTML = html;
+            } else {
+                statusEl.className = 'status-msg error';
+                statusEl.textContent = 'Error: ' + (data.error || 'Analysis failed');
+            }
+        })
+        .catch(err => {
+            btn.disabled = false;
+            btn.innerHTML = '&#9889; Generate Cover Letter Points';
+            statusEl.className = 'status-msg error';
+            statusEl.textContent = 'Error: ' + err.message;
+        });
+}
+</script>
+{% endblock %}

@@ -1,0 +1,123 @@
+# =====================================================
+# ATSchecker Configuration
+# =====================================================
+
+# Target cities for job search
+cities:
+  - Berlin
+  - Wolfsburg
+  - Leipzig
+  - Magdeburg
+
+# Job types to search for
+job_types:
+  - Werkstudent
+  - Working Student
+  - Internship
+  - Praktikum
+  - Master Thesis
+  - Masterarbeit
+  - Abschlussarbeit
+
+# Keywords aligned with CV skills (used for job search queries)
+search_keywords:
+  - Data Engineering
+  - Backend Development
+  - Software Engineer
+  - Python Developer
+  - Java Developer
+  - Big Data
+  - Data Science
+  - Machine Learning
+  - DevOps
+  - Cloud Engineer
+  - AI Machine Learning
+  - Deep Learning NLP
+  - Computer Vision
+
+# Technical skills extracted from CV (used for matching)
+cv_skills:
+  - Python
+  - Java
+  - SQL
+  - Bash
+  - PySpark
+  - Spark
+  - Hadoop
+  - MapReduce
+  - HDFS
+  - AWS
+  - Lambda
+  - EC2
+  - S3
+  - CloudWatch
+  - Elasticsearch
+  - Pandas
+  - NumPy
+  - Scikit-learn
+  - PyTorch
+  - LangChain
+  - Docker
+  - Git
+  - Maven
+  - PostgreSQL
+  - CI/CD
+  - Linux
+  - React
+  - ETL
+  - Protobuf
+  - REST API
+  - Machine Learning
+  - Deep Learning
+  - NLP
+  - RAG
+  - LLM
+
+# Scraper settings
+scraping:
+  max_results_per_source: 100
+  request_delay_seconds: 2
+  selenium_headless: true
+  cache_expiry_hours: 24
+  max_keywords_per_city: 6
+  max_job_types: 6
+  max_pages: 5
+  # Priority order for scrapers (first = highest priority)
+  scraper_priority:
+    - arbeitnow
+    - google_jobs
+    - linkedin
+    - indeed
+    - stepstone
+    - xing
+    - jobteaser
+
+# ATS checker settings
+ats:
+  max_file_size_mb: 2
+  max_pages: 2
+  # Standard ATS section headings
+  standard_sections:
+    - experience
+    - education
+    - skills
+    - projects
+    - summary
+    - profile
+    - objective
+    - certifications
+    - awards
+    - languages
+    - publications
+    - references
+    - work experience
+    - professional experience
+    - technical skills
+    - personal details
+
+# Paths (relative to project root)
+paths:
+  cv_folder: cvs
+  reports_folder: reports
+  cache_file: .job_cache.json
+  analyzed_cache: .analyzed_cache.json

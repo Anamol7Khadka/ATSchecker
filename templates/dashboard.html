@@ -1,0 +1,336 @@
+{% extends "base.html" %}
+{% block title %}Dashboard - ATSchecker{% endblock %}
+
+{% block content %}
+<!-- ── Action Bar ── -->
+<div class="action-bar">
+    <div class="action-group">
+        <h3>&#128196; CV Management</h3>
+        <button class="btn btn-primary btn-sm" onclick="compileCv()" id="btn-compile">
+            Compile LaTeX
+        </button>
+        <form id="upload-form" class="upload-form" enctype="multipart/form-data">
+            <input type="file" name="file" accept=".pdf" class="file-input" id="pdf-upload">
+            <button type="submit" class="btn btn-success btn-sm">Upload PDF</button>
+        </form>
+    </div>
+    <div class="action-group">
+        <h3>&#128269; Job Search</h3>
+        <label class="small-label">Locations (select multiple)</label>
+        <div class="city-checkboxes" id="city-checkboxes">
+            {% for city in config.get('cities', []) %}
+            <label class="checkbox-inline">
+                <input type="checkbox" name="city" value="{{ city }}" checked> {{ city }}
+            </label>
+            {% endfor %}
+        </div>
+        <div class="city-add">
+            <input type="text" id="city-new" placeholder="Add city (e.g., Magdeburg)">
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="startScrape(false)" id="btn-scrape">
+            Scrape Fresh Jobs
+        </button>
+        <button class="btn btn-secondary btn-sm" onclick="startScrape(true)">
+            Use Cached
+        </button>
+    </div>
+</div>
+
+<!-- Status Messages -->
+<div id="compile-status" class="status-msg" style="display:none;"></div>
+<div id="scrape-status" class="status-msg" style="display:none;"></div>
+<div id="scrape-log" class="log-window" style="display:none;"></div>
+
+<!-- ── ATS Score Section ── -->
+{% if ats_reports %}
+<div class="score-section">
+    {% for report in ats_reports %}
+    <div class="score-card grade-{{ report.grade }}">
+        <div class="score-value">{{ report.overall_score }}</div>
+        <div class="score-label">ATS Score / 100</div>
+        <div style="margin-top:8px;">
+            <span class="badge" style="background:rgba(88,166,255,0.15);color:var(--accent-blue);font-size:0.85rem;">
+                Grade {{ report.grade }}
+            </span>
+        </div>
+    </div>
+    {% endfor %}
+
+    {% if gap_analysis and gap_analysis.top_missing %}
+    <div class="card" style="flex:1;">
+        <div class="card-title">Top Missing Skills</div>
+        <div class="skills-gap">
+            {% for skill in gap_analysis.top_missing[:8] %}
+            <span class="skill-tag skill-missing">{{ skill }}</span>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    {% if cv_data and cv_data.skills %}
+    <div class="card" style="flex:1;">
+        <div class="card-title">Your Skills</div>
+        <div class="skills-gap">
+            {% for skill in cv_data.skills[:12] %}
+            <span class="skill-tag skill-have">{{ skill }}</span>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<!-- ATS Check Details (collapsible) -->
+{% for report in ats_reports %}
+<div class="card">
+    <div class="card-header">
+        <div class="card-title">ATS Check Details</div>
+        <button class="btn btn-secondary btn-sm" onclick="this.parentElement.parentElement.querySelector('.ats-details').classList.toggle('hidden')">
+            Toggle Details
+        </button>
+    </div>
+    <div class="ats-details hidden">
+        <table class="job-table" style="font-size:0.82rem;">
+            <thead><tr><th>Check</th><th>Score</th><th>Status</th><th>Details</th></tr></thead>
+            <tbody>
+            {% for check in report.checks %}
+            <tr>
+                <td>{{ check.name }}</td>
+                <td>{{ check.score }}/{{ check.max_score }}</td>
+                <td>
+                    {% if check.status == 'pass' %}
+                    <span style="color:var(--accent-green);">&#10004; Pass</span>
+                    {% elif check.status == 'warning' %}
+                    <span style="color:var(--accent-yellow);">&#9888; Warn</span>
+                    {% else %}
+                    <span style="color:var(--accent-red);">&#10008; Fail</span>
+                    {% endif %}
+                </td>
+                <td style="color:var(--text-secondary);">
+                    <div>{{ check.message }}</div>
+                    {% if check.details %}
+                    <ul style="margin:6px 0 0 0; padding-left:16px; color:var(--text-secondary);">
+                        {% for d in check.details %}
+                        <li style="color: {{ 'var(--accent-red)' if d.startswith('✗') else 'var(--text-secondary)' }};">{{ d }}</li>
+                        {% endfor %}
+                    </ul>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        <div style="margin-top:10px; font-size:0.82rem; color:var(--text-secondary);">
+            <strong>Missing / Defects spotlight:</strong>
+            <ul style="margin:6px 0 0 0; padding-left:16px; color:var(--text-secondary);">
+                {% for check in report.checks %}
+                    {% for d in check.details %}
+                        {% if d.startswith('✗') or 'Non-standard' in d or 'missing' in d.lower() %}
+                        <li style="color:var(--accent-red);">{{ check.name }}: {{ d }}</li>
+                        {% endif %}
+                    {% endfor %}
+                {% endfor %}
+                {% if not report.checks or not report.checks|selectattr('details') %}
+                <li>All checks passed without flagged defects.</li>
+                {% endif %}
+            </ul>
+        </div>
+    </div>
+</div>
+{% endfor %}
+
+{% else %}
+<div class="card">
+    <div class="empty-state">
+        <h3>No CV Loaded</h3>
+        <p>Click <strong>Compile LaTeX</strong> to build from main.tex, or <strong>Upload PDF</strong> to analyze an existing CV.</p>
+    </div>
+</div>
+{% endif %}
+
+<!-- ── Job Listings ── -->
+<div class="card">
+    <div class="card-header">
+        <div class="card-title">Job Listings</div>
+        {% if all_jobs %}
+        <span class="status-badge status-ok">{{ all_jobs|length }} total jobs</span>
+        {% endif %}
+    </div>
+
+    {% if all_jobs %}
+    <!-- Tabs -->
+    <div class="tabs">
+        <button class="tab active" onclick="switchTab('all', this)">
+            All Jobs <span class="tab-badge tab-badge-blue">{{ regular_jobs|length }}</span>
+        </button>
+        <button class="tab" onclick="switchTab('fresh', this)">
+            &#128293; Fresh (24h) <span class="tab-badge tab-badge-green">{{ fresh_count }}</span>
+        </button>
+        <button class="tab" onclick="switchTab('thesis', this)">
+            &#127891; Master Thesis AI/ML <span class="tab-badge tab-badge-purple">{{ thesis_jobs|length }}</span>
+        </button>
+    </div>
+
+    <!-- Filters -->
+    <div class="filter-bar">
+        <select id="filter-city" onchange="filterJobs()">
+            <option value="">All Cities</option>
+            {% for city in config.get('cities', []) %}
+            <option value="{{ city|lower }}">{{ city }}</option>
+            {% endfor %}
+        </select>
+        <select id="filter-source" onchange="filterJobs()">
+            <option value="">All Sources</option>
+            {% for source in sources %}
+            <option value="{{ source|lower }}">{{ source }}</option>
+            {% endfor %}
+        </select>
+        <input type="text" id="filter-search" placeholder="Search title, company..." oninput="filterJobs()">
+    </div>
+
+    <!-- All Jobs Tab -->
+    <div id="tab-all" class="tab-content active">
+        <div class="table-wrap">
+            <table class="job-table" id="table-all">
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th onclick="sortTable('table-all',1)">Title &#8693;</th>
+                        <th onclick="sortTable('table-all',2)">Company &#8693;</th>
+                        <th onclick="sortTable('table-all',3)">Location &#8693;</th>
+                        <th onclick="sortTable('table-all',4)">Source</th>
+                        <th onclick="sortTable('table-all',5)">Posted &#8693;</th>
+                        <th onclick="sortTable('table-all',6)">Match &#8693;</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for job_id, job in regular_jobs %}
+                    <tr class="job-row"
+                        data-city="{{ job.location|lower }}"
+                        data-source="{{ job.source|lower }}"
+                        data-title="{{ job.title|lower }}"
+                        data-company="{{ job.company|lower }}">
+                        <td>{{ loop.index }}</td>
+                        <td>
+                            <a href="/job/{{ job_id }}" class="job-title-link">{{ job.title[:65] }}</a>
+                            {% if is_within_24h(job) %} <span class="badge badge-new">NEW</span>{% endif %}
+                        </td>
+                        <td>{{ job.company[:35] }}</td>
+                        <td>{{ job.location[:25] }}</td>
+                        <td><span class="badge badge-source">{{ job.source }}</span></td>
+                        <td style="white-space:nowrap;font-size:0.78rem;">{{ job.posted_date or 'N/A' }}</td>
+                        <td>
+                            {% if match_lookup.get(job.url) %}
+                            {% set score = match_lookup[job.url].overall_score %}
+                            <div class="match-bar">
+                                <div class="match-bar-fill {{ 'match-high' if score >= 55 else 'match-medium' if score >= 35 else 'match-low' }}"
+                                     style="width:{{ [score, 100]|min }}%"></div>
+                            </div>
+                            {{ "%.0f"|format(score) }}%
+                            {% else %}-{% endif %}
+                        </td>
+                        <td>
+                            <a href="/job/{{ job_id }}" class="btn btn-purple btn-sm">Analyze</a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Fresh (24h) Tab -->
+    <div id="tab-fresh" class="tab-content">
+        <div class="table-wrap">
+            <table class="job-table" id="table-fresh">
+                <thead>
+                    <tr>
+                        <th>#</th><th>Title</th><th>Company</th><th>Location</th>
+                        <th>Source</th><th>Posted</th><th>Match</th><th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% set ns = namespace(idx=0) %}
+                    {% for job_id, job in regular_jobs %}
+                    {% if is_within_24h(job) %}
+                    {% set ns.idx = ns.idx + 1 %}
+                    <tr>
+                        <td>{{ ns.idx }}</td>
+                        <td>
+                            <a href="/job/{{ job_id }}" class="job-title-link">{{ job.title[:65] }}</a>
+                            <span class="badge badge-new">NEW</span>
+                        </td>
+                        <td>{{ job.company[:35] }}</td>
+                        <td>{{ job.location[:25] }}</td>
+                        <td><span class="badge badge-source">{{ job.source }}</span></td>
+                        <td style="white-space:nowrap;font-size:0.78rem;">{{ job.posted_date or 'N/A' }}</td>
+                        <td>
+                            {% if match_lookup.get(job.url) %}
+                            {{ "%.0f"|format(match_lookup[job.url].overall_score) }}%
+                            {% else %}-{% endif %}
+                        </td>
+                        <td><a href="/job/{{ job_id }}" class="btn btn-purple btn-sm">Analyze</a></td>
+                    </tr>
+                    {% endif %}
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% if fresh_count == 0 %}
+            <div class="empty-state">
+                <h3>No jobs posted in the last 24 hours</h3>
+                <p>Click "Scrape Fresh Jobs" to search for new listings.</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Thesis Tab -->
+    <div id="tab-thesis" class="tab-content">
+        <div class="table-wrap">
+            <table class="job-table" id="table-thesis">
+                <thead>
+                    <tr>
+                        <th>#</th><th>Title</th><th>Company</th><th>Location</th>
+                        <th>Source</th><th>Posted</th><th>Match</th><th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for job_id, job in thesis_jobs %}
+                    <tr>
+                        <td>{{ loop.index }}</td>
+                        <td>
+                            <a href="/job/{{ job_id }}" class="job-title-link">{{ job.title[:65] }}</a>
+                            {% if is_within_24h(job) %} <span class="badge badge-new">NEW</span>{% endif %}
+                            <span class="badge badge-thesis">THESIS</span>
+                        </td>
+                        <td>{{ job.company[:35] }}</td>
+                        <td>{{ job.location[:25] }}</td>
+                        <td><span class="badge badge-source">{{ job.source }}</span></td>
+                        <td style="white-space:nowrap;font-size:0.78rem;">{{ job.posted_date or 'N/A' }}</td>
+                        <td>
+                            {% if match_lookup.get(job.url) %}
+                            {{ "%.0f"|format(match_lookup[job.url].overall_score) }}%
+                            {% else %}-{% endif %}
+                        </td>
+                        <td><a href="/job/{{ job_id }}" class="btn btn-purple btn-sm">Analyze</a></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% if not thesis_jobs %}
+            <div class="empty-state">
+                <h3>No AI/ML Master Thesis postings found</h3>
+                <p>Thesis jobs are identified from all scraped sources automatically.</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    {% else %}
+    <div class="empty-state">
+        <h3>No Jobs Loaded</h3>
+        <p>Click <strong>Scrape Fresh Jobs</strong> to search across Arbeitnow, LinkedIn, Indeed, StepStone, XING, Jobteaser, and more.</p>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

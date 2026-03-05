@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}ATSchecker{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-brand">
+            <a href="/" style="text-decoration:none;display:flex;align-items:center;gap:8px;">
+                <span style="font-size:1.4rem;">&#9881;</span>
+                <h1>ATSchecker</h1>
+            </a>
+            <span class="nav-subtitle">CV Analysis &middot; Job Matching &middot; Cover Letter AI</span>
+        </div>
+        <div class="nav-actions">
+            <span id="cv-indicator" class="status-badge {{ 'status-ok' if cv_loaded else 'status-none' }}">
+                CV: {{ 'Loaded' if cv_loaded else 'None' }}
+            </span>
+            <span id="jobs-indicator" class="status-badge {{ 'status-ok' if job_count > 0 else 'status-none' }}">
+                Jobs: {{ job_count }}
+            </span>
+        </div>
+    </nav>
+
+    <main class="container">
+        {% block content %}{% endblock %}
+    </main>
+
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

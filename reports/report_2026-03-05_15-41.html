@@ -1,0 +1,1186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ATSchecker Report — March 05, 2026 at 15:41</title>
+    <style>
+        :root {
+            --bg: #0d1117;
+            --surface: #161b22;
+            --surface2: #1c2333;
+            --border: #30363d;
+            --text: #e6edf3;
+            --text-muted: #8b949e;
+            --green: #3fb950;
+            --yellow: #d29922;
+            --red:  #f85149;
+            --blue: #58a6ff;
+            --purple: #bc8cff;
+            --orange: #f0883e;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+            padding: 24px;
+        }
+        .container { max-width: 1400px; margin: 0 auto; }
+
+        /* Header */
+        .header {
+            text-align: center;
+            padding: 32px 0;
+            border-bottom: 1px solid var(--border);
+            margin-bottom: 32px;
+        }
+        .header h1 { font-size: 2em; color: var(--blue); }
+        .header p { color: var(--text-muted); margin-top: 8px; }
+        .header .stats {
+            display: flex; gap: 32px; justify-content: center; margin-top: 16px;
+        }
+        .stat-box {
+            background: var(--surface);
+            padding: 12px 24px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+        }
+        .stat-box .num { font-size: 1.8em; font-weight: bold; }
+        .stat-box .label { font-size: 0.85em; color: var(--text-muted); }
+
+        /* Tabs */
+        .tabs {
+            display: flex; gap: 0; margin-bottom: 24px;
+            border-bottom: 2px solid var(--border);
+        }
+        .tab {
+            padding: 12px 24px; cursor: pointer;
+            color: var(--text-muted); border-bottom: 2px solid transparent;
+            font-weight: 500; transition: all 0.2s;
+            background: none; border: none; border-bottom: 2px solid transparent;
+            font-size: 1em; margin-bottom: -2px;
+        }
+        .tab:hover { color: var(--text); }
+        .tab.active { color: var(--blue); border-bottom-color: var(--blue); }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+
+        /* Cards */
+        .card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 24px;
+        }
+        .card h2 { color: var(--blue); margin-bottom: 16px; font-size: 1.3em; }
+        .card h3 { color: var(--text); margin: 16px 0 8px; }
+
+        /* ATS Score Gauge */
+        .ats-gauge {
+            display: flex; align-items: center; gap: 32px;
+            padding: 24px; margin-bottom: 24px;
+        }
+        .gauge-circle {
+            width: 160px; height: 160px; border-radius: 50%;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            font-size: 2.5em; font-weight: bold;
+            border: 6px solid;
+            flex-shrink: 0;
+        }
+        .gauge-circle .grade { font-size: 0.5em; color: var(--text-muted); }
+        .gauge-A { border-color: var(--green); color: var(--green); }
+        .gauge-B { border-color: #7ee787; color: #7ee787; }
+        .gauge-C { border-color: var(--yellow); color: var(--yellow); }
+        .gauge-D { border-color: var(--orange); color: var(--orange); }
+        .gauge-F { border-color: var(--red); color: var(--red); }
+        .gauge-info { flex: 1; }
+        .gauge-info h2 { margin-bottom: 8px; }
+
+        /* Check items */
+        .check-item {
+            display: flex; align-items: flex-start; gap: 12px;
+            padding: 12px 0;
+            border-bottom: 1px solid var(--border);
+        }
+        .check-item:last-child { border-bottom: none; }
+        .check-badge {
+            padding: 4px 10px; border-radius: 6px;
+            font-size: 0.8em; font-weight: 600; white-space: nowrap;
+            min-width: 48px; text-align: center;
+        }
+        .badge-pass { background: rgba(63,185,80,0.15); color: var(--green); }
+        .badge-warning { background: rgba(210,153,34,0.15); color: var(--yellow); }
+        .badge-fail { background: rgba(248,81,73,0.15); color: var(--red); }
+        .check-info { flex: 1; }
+        .check-name { font-weight: 600; }
+        .check-msg { color: var(--text-muted); font-size: 0.9em; margin-top: 2px; }
+        .check-details { color: var(--text-muted); font-size: 0.85em; margin-top: 4px; font-style: italic; }
+
+        /* Recommendations */
+        .rec-list { list-style: none; }
+        .rec-list li {
+            padding: 8px 12px; margin: 4px 0;
+            background: var(--surface2);
+            border-radius: 6px; font-size: 0.9em;
+            border-left: 3px solid;
+        }
+        .rec-critical { border-left-color: var(--red); }
+        .rec-warning { border-left-color: var(--yellow); }
+
+        /* Job Table */
+        .job-filters {
+            display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap;
+        }
+        .filter-btn {
+            padding: 6px 14px; border-radius: 20px;
+            border: 1px solid var(--border); background: var(--surface2);
+            color: var(--text-muted); cursor: pointer; font-size: 0.85em;
+            transition: all 0.2s;
+        }
+        .filter-btn:hover, .filter-btn.active {
+            border-color: var(--blue); color: var(--blue); background: rgba(88,166,255,0.1);
+        }
+        .search-box {
+            padding: 8px 14px; border-radius: 8px;
+            border: 1px solid var(--border); background: var(--surface2);
+            color: var(--text); font-size: 0.9em; width: 280px;
+        }
+        .search-box::placeholder { color: var(--text-muted); }
+
+        table {
+            width: 100%; border-collapse: collapse; font-size: 0.9em;
+        }
+        th {
+            text-align: left; padding: 12px 8px;
+            border-bottom: 2px solid var(--border);
+            color: var(--text-muted); font-weight: 600;
+            cursor: pointer; user-select: none;
+        }
+        th:hover { color: var(--blue); }
+        td {
+            padding: 10px 8px; border-bottom: 1px solid var(--border);
+            vertical-align: top;
+        }
+        tr:hover td { background: var(--surface2); }
+        .score-cell {
+            font-weight: 700; font-size: 1em;
+        }
+        .score-high { color: var(--green); }
+        .score-med { color: var(--yellow); }
+        .score-low { color: var(--red); }
+        .conf-badge {
+            padding: 2px 8px; border-radius: 10px; font-size: 0.75em;
+            font-weight: 600;
+        }
+        .conf-very-high { background: rgba(63,185,80,0.2); color: var(--green); }
+        .conf-high { background: rgba(126,231,135,0.2); color: #7ee787; }
+        .conf-medium { background: rgba(210,153,34,0.2); color: var(--yellow); }
+        .conf-low { background: rgba(248,81,73,0.2); color: var(--red); }
+        a { color: var(--blue); text-decoration: none; }
+        a:hover { text-decoration: underline; }
+        .tag {
+            display: inline-block; padding: 2px 8px; margin: 1px 2px;
+            border-radius: 4px; font-size: 0.75em;
+            background: rgba(188,140,255,0.15); color: var(--purple);
+        }
+        .tag-missing {
+            background: rgba(248,81,73,0.1); color: var(--red);
+        }
+        .warning-tag {
+            display: inline-block; padding: 2px 8px; margin: 1px;
+            border-radius: 4px; font-size: 0.75em;
+            background: rgba(210,153,34,0.15); color: var(--yellow);
+        }
+
+        /* Skills Gap */
+        .skills-gap-bar {
+            display: flex; align-items: center; gap: 12px;
+            padding: 6px 0;
+        }
+        .gap-label { min-width: 140px; font-size: 0.9em; }
+        .gap-bar-outer {
+            flex: 1; height: 20px; background: var(--surface2);
+            border-radius: 4px; overflow: hidden;
+        }
+        .gap-bar-inner {
+            height: 100%; border-radius: 4px;
+            background: linear-gradient(90deg, var(--red), var(--orange));
+        }
+        .gap-count { min-width: 60px; text-align: right; color: var(--text-muted); font-size: 0.85em; }
+
+        /* Multi-CV selector */
+        .cv-selector {
+            display: flex; gap: 8px; margin-bottom: 24px; flex-wrap: wrap;
+        }
+        .cv-btn {
+            padding: 8px 16px; border-radius: 8px;
+            border: 1px solid var(--border); background: var(--surface);
+            color: var(--text); cursor: pointer; font-size: 0.9em;
+        }
+        .cv-btn.active { border-color: var(--blue); background: rgba(88,166,255,0.1); }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .header .stats { flex-direction: column; gap: 8px; }
+            .ats-gauge { flex-direction: column; text-align: center; }
+            .job-filters { flex-direction: column; }
+            .search-box { width: 100%; }
+        }
+
+        .top-match { background: rgba(63,185,80,0.05); }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <h1>&#x1F4CB; ATSchecker Report</h1>
+            <p>Generated on March 05, 2026 at 15:41</p>
+            <div class="stats">
+                <div class="stat-box">
+                    <div class="num">1</div>
+                    <div class="label">CVs Analyzed</div>
+                </div>
+                <div class="stat-box">
+                    <div class="num">10</div>
+                    <div class="label">Jobs Found</div>
+                </div>
+                <div class="stat-box">
+                    <div class="num">66.0%</div>
+                    <div class="label">Avg Match Score</div>
+                </div>
+                <div class="stat-box">
+                    <div class="num">8</div>
+                    <div class="label">High-Likelihood Matches</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tabs -->
+        <div class="tabs">
+            <button class="tab active" onclick="switchTab('ats')">&#x1F50D; ATS Analysis</button>
+            <button class="tab" onclick="switchTab('jobs')">&#x1F4BC; Job Matches</button>
+            <button class="tab" onclick="switchTab('gap')">&#x1F4CA; Skills Gap</button>
+        </div>
+
+        <!-- TAB 1: ATS Analysis -->
+        <div id="tab-ats" class="tab-content active">
+            
+            <div class="card">
+                <div class="ats-gauge">
+                    <div class="gauge-circle gauge-B">
+                        86
+                        <div class="grade">Grade B</div>
+                    </div>
+                    <div class="gauge-info">
+                        <h2>New_CV.pdf</h2>
+                        <p style="color: var(--text-muted);">
+                            
+                                Your CV is well-optimized for ATS systems. Minor improvements possible.
+                            
+                        </p>
+                    </div>
+                </div>
+
+                <h3>Detailed Checks</h3>
+                
+                <div class="check-item">
+                    <span class="check-badge badge-pass">10/10</span>
+                    <div class="check-info">
+                        <div class="check-name">Text Extractability</div>
+                        <div class="check-msg">Text extraction successful (4176 chars).</div>
+                        
+                        <div class="check-details">
+                            All content appears to be parseable text.<br>
+                        </div>
+                        
+                    </div>
+                </div>
+                
+                <div class="check-item">
+                    <span class="check-badge badge-warning">6/10</span>
+                    <div class="check-info">
+                        <div class="check-name">Image Detection</div>
+                        <div class="check-msg">1 image detected (likely a profile photo). Some ATS systems struggle with images.</div>
+                        
+                        <div class="check-details">
+                            Consider removing the photo for ATS-optimised applications.<br>German CVs commonly include photos, but US/UK-built ATS may choke on them.<br>
+                        </div>
+                        
+                    </div>
+                </div>
+                
+                <div class="check-item">
+                    <span class="check-badge badge-pass">10/10</span>
+                    <div class="check-info">
+                        <div class="check-name">Table Detection</div>
+                        <div class="check-msg">No tables detected — ATS-safe layout.</div>
+                        
+                    </div>
+                </div>
+                
+                <div class="check-item">
+                    <span class="check-badge badge-fail">4/10</span>
+                    <div class="check-info">
+                        <div class="check-name">Font Compatibility</div>
+                        <div class="check-msg">5 non-standard fonts detected — risk of garbled text.</div>
+                        
+                        <div class="check-details">
+                            Non-standard fonts: MULJMX+SFRM1000, OIQJBS+CMTI10, RXYCMM+CMBX12, XDJWFC+CMSY10, ZBDTCH+CMBX10<br>Fonts found: JHUUZS+CMR10, MULJMX+SFRM1000, OIQJBS+CMTI10, RXYCMM+CMBX12, SJXBDX+CMTT10, XDJWFC+CMSY10, ZBDTCH+CMBX10<br>
+                        </div>
+                        
+                    </div>
+                </div>
+                
+                <div class="check-item">
+                    <span class="check-badge badge-fail">4/10</span>
+                    <div class="check-info">
+                        <div class="check-name">Special Characters</div>
+                        <div class="check-msg">4 types of special characters found — may cause ATS parsing issues.</div>
+                        
+                        <div class="check-details">
+                            Characters: '¨' '|' '•' '”'<br>
+                        </div>
+                        
+                    </div>
+                </div>
+                
+                <div class="check-item">
+                    <span class="check-badge badge-pass">10/10</span>
+                    <div class="check-info">
+                        <div class="check-name">Section Headings</div>
+                        <div class="check-msg">All 7 section headings are ATS-standard.</div>
+                        
+                        <div class="check-details">
+                            Sections: personal details, languages, experience, research, education, projects, awards<br>
+                        </div>
+                        
+                    </div>
+                </div>
+                
+                <div class="check-item">
+                    <span class="check-badge badge-pass">10/10</span>
+                    <div class="check-info">
+                        <div class="check-name">Contact Info Parsability</div>
+                        <div class="check-msg">3/3 key contact fields detected.</div>
+                        
+                        <div class="check-details">
+                            ✓ Email: aakaskhadka@gmail.com<br>✓ Phone: +49 15563007796<br>✓ LinkedIn: linkedin.com/in/aakash-khadka<br>✓ GitHub: github.com/Aakash7khadka<br>
+                        </div>
+                        
+                    </div>
+                </div>
+                
+                <div class="check-item">
+                    <span class="check-badge badge-pass">10/10</span>
+                    <div class="check-info">
+                        <div class="check-name">File Size</div>
+                        <div class="check-msg">File size (0.18 MB) is well within ATS limits.</div>
+                        
+                        <div class="check-details">
+                            File size: 0.18 MB<br>
+                        </div>
+                        
+                    </div>
+                </div>
+                
+                <div class="check-item">
+                    <span class="check-badge badge-pass">9/10</span>
+                    <div class="check-info">
+                        <div class="check-name">Page Count</div>
+                        <div class="check-msg">Two-page CV — acceptable for 2+ years of experience.</div>
+                        
+                        <div class="check-details">
+                            Page count: 2<br>
+                        </div>
+                        
+                    </div>
+                </div>
+                
+                <div class="check-item">
+                    <span class="check-badge badge-pass">10/10</span>
+                    <div class="check-info">
+                        <div class="check-name">Text Order</div>
+                        <div class="check-msg">Text order is logical and ATS-parseable.</div>
+                        
+                        <div class="check-details">
+                            Detected order: skills → experience → education → projects<br>
+                        </div>
+                        
+                    </div>
+                </div>
+                
+                <div class="check-item">
+                    <span class="check-badge badge-pass">8/10</span>
+                    <div class="check-info">
+                        <div class="check-name">Keyword Density</div>
+                        <div class="check-msg">19/26 role-relevant keywords found.</div>
+                        
+                        <div class="check-details">
+                            Found: agile, aws, backend, cloud, data, development, docker, engineering, etl, git, hadoop, java, machine learning, pipeline, python, rest, software, spark, sql<br>Consider adding: api, ci/cd, database, kubernetes, linux, microservices, testing<br>
+                        </div>
+                        
+                    </div>
+                </div>
+                
+                <div class="check-item">
+                    <span class="check-badge badge-pass">10/10</span>
+                    <div class="check-info">
+                        <div class="check-name">Hyperlink Validation</div>
+                        <div class="check-msg">All 3 hyperlinks are well-formed.</div>
+                        
+                        <div class="check-details">
+                            Total links found: 3<br>
+                        </div>
+                        
+                    </div>
+                </div>
+                
+                <div class="check-item">
+                    <span class="check-badge badge-pass">10/10</span>
+                    <div class="check-info">
+                        <div class="check-name">PDF Validity</div>
+                        <div class="check-msg">PDF is valid, unencrypted, and parseable.</div>
+                        
+                    </div>
+                </div>
+                
+                <div class="check-item">
+                    <span class="check-badge badge-pass">10/10</span>
+                    <div class="check-info">
+                        <div class="check-name">Header/Footer Content</div>
+                        <div class="check-msg">Critical information is in the main body — ATS-safe.</div>
+                        
+                    </div>
+                </div>
+                
+
+                
+                <h3 style="margin-top: 24px;">Recommendations</h3>
+                <ul class="rec-list">
+                    
+                    <li class="rec-warning">
+                        [WARNING] Image Detection: 1 image detected (likely a profile photo). Some ATS systems struggle with images.
+                    </li>
+                    
+                    <li class="rec-warning">
+                          → Consider removing the photo for ATS-optimised applications.
+                    </li>
+                    
+                    <li class="rec-warning">
+                          → German CVs commonly include photos, but US/UK-built ATS may choke on them.
+                    </li>
+                    
+                    <li class="rec-critical">
+                        [CRITICAL] Font Compatibility: 5 non-standard fonts detected — risk of garbled text.
+                    </li>
+                    
+                    <li class="rec-warning">
+                          → Non-standard fonts: MULJMX+SFRM1000, OIQJBS+CMTI10, RXYCMM+CMBX12, XDJWFC+CMSY10, ZBDTCH+CMBX10
+                    </li>
+                    
+                    <li class="rec-warning">
+                          → Fonts found: JHUUZS+CMR10, MULJMX+SFRM1000, OIQJBS+CMTI10, RXYCMM+CMBX12, SJXBDX+CMTT10, XDJWFC+CMSY10, ZBDTCH+CMBX10
+                    </li>
+                    
+                    <li class="rec-critical">
+                        [CRITICAL] Special Characters: 4 types of special characters found — may cause ATS parsing issues.
+                    </li>
+                    
+                    <li class="rec-warning">
+                          → Characters: '¨' '|' '•' '”'
+                    </li>
+                    
+                </ul>
+                
+            </div>
+            
+        </div>
+
+        <!-- TAB 2: Job Matches -->
+        <div id="tab-jobs" class="tab-content">
+            <div class="card">
+                <h2>Job Matches — Sorted by Acceptance Likelihood</h2>
+
+                <div class="job-filters">
+                    <input type="text" class="search-box" id="jobSearch"
+                           placeholder="Search jobs..." onkeyup="filterJobs()">
+                    <button class="filter-btn active" onclick="filterCity(this, 'all')">All Cities</button>
+                    
+                    <button class="filter-btn" onclick="filterCity(this, 'Berlin')">Berlin</button>
+                    
+                    <button class="filter-btn" onclick="filterCity(this, 'Wolfsburg')">Wolfsburg</button>
+                    
+                    <button class="filter-btn" onclick="filterCity(this, 'Leipzig')">Leipzig</button>
+                    
+                </div>
+
+                <table id="jobTable">
+                    <thead>
+                        <tr>
+                            <th onclick="sortTable(0)">#</th>
+                            <th onclick="sortTable(1)">Title</th>
+                            <th onclick="sortTable(2)">Company</th>
+                            <th onclick="sortTable(3)">Location</th>
+                            <th onclick="sortTable(4)">Source</th>
+                            <th onclick="sortTable(5)">Match %</th>
+                            <th onclick="sortTable(6)">Likelihood</th>
+                            <th>Skills</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        
+                        <tr class="top-match" data-city="Berlin">
+                            <td>1</td>
+                            <td><a href="https://example.com/por1" target="_blank">Praktikum Data Science</a></td>
+                            <td>Porsche Digital</td>
+                            <td>Berlin</td>
+                            <td>XING</td>
+                            <td class="score-cell score-high">
+                                85.8%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-very-high">
+                                    Very High
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                <span class="tag">data science</span>
+                                
+                                <span class="tag">machine learning</span>
+                                
+                                <span class="tag">numpy</span>
+                                
+                                <span class="tag">pandas</span>
+                                
+                                <span class="tag">python</span>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="top-match" data-city="Leipzig">
+                            <td>2</td>
+                            <td><a href="https://example.com/sie1" target="_blank">Working Student Big Data Engineer</a></td>
+                            <td>Siemens</td>
+                            <td>Leipzig</td>
+                            <td>LinkedIn</td>
+                            <td class="score-cell score-high">
+                                85.5%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-very-high">
+                                    Very High
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                <span class="tag">aws</span>
+                                
+                                <span class="tag">elasticsearch</span>
+                                
+                                <span class="tag">etl</span>
+                                
+                                <span class="tag">hadoop</span>
+                                
+                                <span class="tag">java</span>
+                                
+                                
+                                
+                                <span class="tag tag-missing">kafka</span>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="top-match" data-city="Wolfsburg">
+                            <td>3</td>
+                            <td><a href="https://example.com/vw1" target="_blank">Werkstudent Data Engineering</a></td>
+                            <td>Volkswagen AG</td>
+                            <td>Wolfsburg</td>
+                            <td>LinkedIn</td>
+                            <td class="score-cell score-high">
+                                79.2%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-very-high">
+                                    Very High
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                <span class="tag">aws</span>
+                                
+                                <span class="tag">docker</span>
+                                
+                                <span class="tag">etl</span>
+                                
+                                <span class="tag">hadoop</span>
+                                
+                                <span class="tag">python</span>
+                                
+                                
+                                
+                                <span class="tag tag-missing">data engineering</span>
+                                
+                                <span class="tag tag-missing">kubernetes</span>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="top-match" data-city="Berlin">
+                            <td>4</td>
+                            <td><a href="https://example.com/sap1" target="_blank">Internship Machine Learning Engineer</a></td>
+                            <td>SAP</td>
+                            <td>Berlin</td>
+                            <td>StepStone</td>
+                            <td class="score-cell score-high">
+                                77.8%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-very-high">
+                                    Very High
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                <span class="tag">data science</span>
+                                
+                                <span class="tag">deep learning</span>
+                                
+                                <span class="tag">machine learning</span>
+                                
+                                <span class="tag">python</span>
+                                
+                                <span class="tag">pytorch</span>
+                                
+                                
+                                
+                                <span class="tag tag-missing">nlp</span>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="top-match" data-city="Leipzig">
+                            <td>5</td>
+                            <td><a href="https://example.com/fr1" target="_blank">Werkstudent AI / NLP</a></td>
+                            <td>Fraunhofer Institute</td>
+                            <td>Leipzig</td>
+                            <td>Google->LinkedIn</td>
+                            <td class="score-cell score-high">
+                                75.3%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-very-high">
+                                    Very High
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                <span class="tag">deep learning</span>
+                                
+                                <span class="tag">llm</span>
+                                
+                                <span class="tag">machine learning</span>
+                                
+                                <span class="tag">python</span>
+                                
+                                <span class="tag">pytorch</span>
+                                
+                                
+                                
+                                <span class="tag tag-missing">langchain</span>
+                                
+                                <span class="tag tag-missing">nlp</span>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="top-match" data-city="Leipzig">
+                            <td>6</td>
+                            <td><a href="https://example.com/bmw1" target="_blank">Werkstudent Cloud & Data Platform</a></td>
+                            <td>BMW Group</td>
+                            <td>Leipzig</td>
+                            <td>Indeed</td>
+                            <td class="score-cell score-high">
+                                64.5%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-high">
+                                    High
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                <span class="tag">aws</span>
+                                
+                                <span class="tag">docker</span>
+                                
+                                <span class="tag">python</span>
+                                
+                                
+                                
+                                <span class="tag tag-missing">data engineering</span>
+                                
+                                <span class="tag tag-missing">kubernetes</span>
+                                
+                                <span class="tag tag-missing">terraform</span>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="top-match" data-city="Berlin">
+                            <td>7</td>
+                            <td><a href="https://example.com/zal1" target="_blank">Working Student Backend Development (Python)</a></td>
+                            <td>Zalando SE</td>
+                            <td>Berlin</td>
+                            <td>LinkedIn</td>
+                            <td class="score-cell score-med">
+                                59.3%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-high">
+                                    High
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                <span class="tag">django</span>
+                                
+                                <span class="tag">docker</span>
+                                
+                                <span class="tag">git</span>
+                                
+                                <span class="tag">python</span>
+                                
+                                <span class="tag">sql</span>
+                                
+                                
+                                
+                                <span class="tag tag-missing">ci/cd</span>
+                                
+                                <span class="tag tag-missing">linux</span>
+                                
+                                <span class="tag tag-missing">microservices</span>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="top-match" data-city="Berlin">
+                            <td>8</td>
+                            <td><a href="https://example.com/dh1" target="_blank">Werkstudent DevOps / Platform (m/f/d)</a></td>
+                            <td>Delivery Hero</td>
+                            <td>Berlin</td>
+                            <td>Arbeitnow</td>
+                            <td class="score-cell score-med">
+                                55.2%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-high">
+                                    High
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                <span class="tag">aws</span>
+                                
+                                <span class="tag">docker</span>
+                                
+                                <span class="tag">git</span>
+                                
+                                <span class="tag">python</span>
+                                
+                                
+                                
+                                <span class="tag tag-missing">bash</span>
+                                
+                                <span class="tag tag-missing">ci/cd</span>
+                                
+                                <span class="tag tag-missing">kubernetes</span>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="top-match" data-city="Wolfsburg">
+                            <td>9</td>
+                            <td><a href="https://example.com/bosch1" target="_blank">Internship Full Stack Developer</a></td>
+                            <td>Bosch</td>
+                            <td>Wolfsburg</td>
+                            <td>StepStone</td>
+                            <td class="score-cell score-med">
+                                39.2%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                                <span class="warning-tag">Requires German C1 (you have A2 — 3 level(s) gap)</span>
+                                
+                            </td>
+                            <td>
+                                
+                                <span class="tag">django</span>
+                                
+                                <span class="tag">docker</span>
+                                
+                                <span class="tag">git</span>
+                                
+                                <span class="tag">java</span>
+                                
+                                <span class="tag">python</span>
+                                
+                                
+                                
+                                <span class="tag tag-missing">javascript</span>
+                                
+                                <span class="tag tag-missing">node.js</span>
+                                
+                                <span class="tag tag-missing">rest api</span>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="top-match" data-city="Berlin">
+                            <td>10</td>
+                            <td><a href="https://example.com/db1" target="_blank">Werkstudent Software Engineer Java</a></td>
+                            <td>Deutsche Bahn</td>
+                            <td>Berlin</td>
+                            <td>Arbeitnow</td>
+                            <td class="score-cell score-med">
+                                38.2%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                                <span class="warning-tag">Requires German B2 (you have A2 — 2 level(s) gap)</span>
+                                
+                            </td>
+                            <td>
+                                
+                                <span class="tag">docker</span>
+                                
+                                <span class="tag">git</span>
+                                
+                                <span class="tag">java</span>
+                                
+                                <span class="tag">maven</span>
+                                
+                                
+                                
+                                <span class="tag tag-missing">agile</span>
+                                
+                                <span class="tag tag-missing">ci/cd</span>
+                                
+                                <span class="tag tag-missing">microservices</span>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- TAB 3: Skills Gap -->
+        <div id="tab-gap" class="tab-content">
+            <div class="card">
+                <h2>Skills Gap Analysis</h2>
+                <p style="color: var(--text-muted); margin-bottom: 16px;">
+                    Skills frequently requested in job postings that are not present in your CV.
+                    Adding these skills can significantly improve your match scores.
+                </p>
+
+                
+                
+                
+                
+                <div class="skills-gap-bar">
+                    <div class="gap-label">kubernetes</div>
+                    <div class="gap-bar-outer">
+                        <div class="gap-bar-inner" style="width: 100.0%;"></div>
+                    </div>
+                    <div class="gap-count">3 jobs</div>
+                </div>
+                
+                
+                <div class="skills-gap-bar">
+                    <div class="gap-label">ci/cd</div>
+                    <div class="gap-bar-outer">
+                        <div class="gap-bar-inner" style="width: 100.0%;"></div>
+                    </div>
+                    <div class="gap-count">3 jobs</div>
+                </div>
+                
+                
+                <div class="skills-gap-bar">
+                    <div class="gap-label">rest api</div>
+                    <div class="gap-bar-outer">
+                        <div class="gap-bar-inner" style="width: 100.0%;"></div>
+                    </div>
+                    <div class="gap-count">3 jobs</div>
+                </div>
+                
+                
+                <div class="skills-gap-bar">
+                    <div class="gap-label">data engineering</div>
+                    <div class="gap-bar-outer">
+                        <div class="gap-bar-inner" style="width: 67.0%;"></div>
+                    </div>
+                    <div class="gap-count">2 jobs</div>
+                </div>
+                
+                
+                <div class="skills-gap-bar">
+                    <div class="gap-label">nlp</div>
+                    <div class="gap-bar-outer">
+                        <div class="gap-bar-inner" style="width: 67.0%;"></div>
+                    </div>
+                    <div class="gap-count">2 jobs</div>
+                </div>
+                
+                
+                <div class="skills-gap-bar">
+                    <div class="gap-label">terraform</div>
+                    <div class="gap-bar-outer">
+                        <div class="gap-bar-inner" style="width: 67.0%;"></div>
+                    </div>
+                    <div class="gap-count">2 jobs</div>
+                </div>
+                
+                
+                <div class="skills-gap-bar">
+                    <div class="gap-label">linux</div>
+                    <div class="gap-bar-outer">
+                        <div class="gap-bar-inner" style="width: 67.0%;"></div>
+                    </div>
+                    <div class="gap-count">2 jobs</div>
+                </div>
+                
+                
+                <div class="skills-gap-bar">
+                    <div class="gap-label">microservices</div>
+                    <div class="gap-bar-outer">
+                        <div class="gap-bar-inner" style="width: 67.0%;"></div>
+                    </div>
+                    <div class="gap-count">2 jobs</div>
+                </div>
+                
+                
+                <div class="skills-gap-bar">
+                    <div class="gap-label">kafka</div>
+                    <div class="gap-bar-outer">
+                        <div class="gap-bar-inner" style="width: 33.0%;"></div>
+                    </div>
+                    <div class="gap-count">1 jobs</div>
+                </div>
+                
+                
+                <div class="skills-gap-bar">
+                    <div class="gap-label">langchain</div>
+                    <div class="gap-bar-outer">
+                        <div class="gap-bar-inner" style="width: 33.0%;"></div>
+                    </div>
+                    <div class="gap-count">1 jobs</div>
+                </div>
+                
+                
+                <div class="skills-gap-bar">
+                    <div class="gap-label">postgresql</div>
+                    <div class="gap-bar-outer">
+                        <div class="gap-bar-inner" style="width: 33.0%;"></div>
+                    </div>
+                    <div class="gap-count">1 jobs</div>
+                </div>
+                
+                
+                <div class="skills-gap-bar">
+                    <div class="gap-label">bash</div>
+                    <div class="gap-bar-outer">
+                        <div class="gap-bar-inner" style="width: 33.0%;"></div>
+                    </div>
+                    <div class="gap-count">1 jobs</div>
+                </div>
+                
+                
+                <div class="skills-gap-bar">
+                    <div class="gap-label">javascript</div>
+                    <div class="gap-bar-outer">
+                        <div class="gap-bar-inner" style="width: 33.0%;"></div>
+                    </div>
+                    <div class="gap-count">1 jobs</div>
+                </div>
+                
+                
+                <div class="skills-gap-bar">
+                    <div class="gap-label">node.js</div>
+                    <div class="gap-bar-outer">
+                        <div class="gap-bar-inner" style="width: 33.0%;"></div>
+                    </div>
+                    <div class="gap-count">1 jobs</div>
+                </div>
+                
+                
+                <div class="skills-gap-bar">
+                    <div class="gap-label">typescript</div>
+                    <div class="gap-bar-outer">
+                        <div class="gap-bar-inner" style="width: 33.0%;"></div>
+                    </div>
+                    <div class="gap-count">1 jobs</div>
+                </div>
+                
+                
+            </div>
+
+            
+            <div class="card">
+                <h2>Your Current Skills</h2>
+                <p style="margin-bottom: 12px;">
+                    
+                    <span class="tag">S3</span>
+                    
+                    <span class="tag">aws</span>
+                    
+                    <span class="tag">cloudwatch</span>
+                    
+                    <span class="tag">data science</span>
+                    
+                    <span class="tag">deep learning</span>
+                    
+                    <span class="tag">django</span>
+                    
+                    <span class="tag">docker</span>
+                    
+                    <span class="tag">ec2</span>
+                    
+                    <span class="tag">elasticsearch</span>
+                    
+                    <span class="tag">etl</span>
+                    
+                    <span class="tag">flutter</span>
+                    
+                    <span class="tag">git</span>
+                    
+                    <span class="tag">hadoop</span>
+                    
+                    <span class="tag">java</span>
+                    
+                    <span class="tag">jira</span>
+                    
+                    <span class="tag">lambda</span>
+                    
+                    <span class="tag">llm</span>
+                    
+                    <span class="tag">machine learning</span>
+                    
+                    <span class="tag">maven</span>
+                    
+                    <span class="tag">numpy</span>
+                    
+                    <span class="tag">pandas</span>
+                    
+                    <span class="tag">protobuf</span>
+                    
+                    <span class="tag">pyspark</span>
+                    
+                    <span class="tag">python</span>
+                    
+                    <span class="tag">pytorch</span>
+                    
+                    <span class="tag">rag</span>
+                    
+                    <span class="tag">react</span>
+                    
+                    <span class="tag">react.js</span>
+                    
+                    <span class="tag">scikit-learn</span>
+                    
+                    <span class="tag">spark</span>
+                    
+                    <span class="tag">sql</span>
+                    
+                </p>
+            </div>
+            
+        </div>
+    </div>
+
+    <script>
+        function switchTab(tab) {
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('.tab').forEach(el => el.classList.remove('active'));
+            document.getElementById('tab-' + tab).classList.add('active');
+            event.target.classList.add('active');
+        }
+
+        function filterCity(btn, city) {
+            document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            const rows = document.querySelectorAll('#jobTable tbody tr');
+            rows.forEach(row => {
+                if (city === 'all' || row.dataset.city.toLowerCase().includes(city.toLowerCase())) {
+                    row.style.display = '';
+                } else {
+                    row.style.display = 'none';
+                }
+            });
+        }
+
+        function filterJobs() {
+            const q = document.getElementById('jobSearch').value.toLowerCase();
+            const rows = document.querySelectorAll('#jobTable tbody tr');
+            rows.forEach(row => {
+                const text = row.textContent.toLowerCase();
+                row.style.display = text.includes(q) ? '' : 'none';
+            });
+        }
+
+        let sortDirection = {};
+        function sortTable(col) {
+            const table = document.getElementById('jobTable');
+            const tbody = table.querySelector('tbody');
+            const rows = Array.from(tbody.querySelectorAll('tr'));
+
+            sortDirection[col] = !sortDirection[col];
+            const dir = sortDirection[col] ? 1 : -1;
+
+            rows.sort((a, b) => {
+                let valA = a.cells[col].textContent.trim();
+                let valB = b.cells[col].textContent.trim();
+
+                // Try numeric sort
+                const numA = parseFloat(valA);
+                const numB = parseFloat(valB);
+                if (!isNaN(numA) && !isNaN(numB)) {
+                    return (numA - numB) * dir;
+                }
+                return valA.localeCompare(valB) * dir;
+            });
+
+            rows.forEach(row => tbody.appendChild(row));
+        }
+    </script>
+</body>
+</html>

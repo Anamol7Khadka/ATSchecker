@@ -1,0 +1,3884 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ATSchecker Report — March 05, 2026 at 16:18</title>
+    <style>
+        :root {
+            --bg: #0d1117;
+            --surface: #161b22;
+            --surface2: #1c2333;
+            --border: #30363d;
+            --text: #e6edf3;
+            --text-muted: #8b949e;
+            --green: #3fb950;
+            --yellow: #d29922;
+            --red:  #f85149;
+            --blue: #58a6ff;
+            --purple: #bc8cff;
+            --orange: #f0883e;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+            padding: 24px;
+        }
+        .container { max-width: 1400px; margin: 0 auto; }
+
+        /* Header */
+        .header {
+            text-align: center;
+            padding: 32px 0;
+            border-bottom: 1px solid var(--border);
+            margin-bottom: 32px;
+        }
+        .header h1 { font-size: 2em; color: var(--blue); }
+        .header p { color: var(--text-muted); margin-top: 8px; }
+        .header .stats {
+            display: flex; gap: 32px; justify-content: center; margin-top: 16px;
+        }
+        .stat-box {
+            background: var(--surface);
+            padding: 12px 24px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+        }
+        .stat-box .num { font-size: 1.8em; font-weight: bold; }
+        .stat-box .label { font-size: 0.85em; color: var(--text-muted); }
+
+        /* Tabs */
+        .tabs {
+            display: flex; gap: 0; margin-bottom: 24px;
+            border-bottom: 2px solid var(--border);
+        }
+        .tab {
+            padding: 12px 24px; cursor: pointer;
+            color: var(--text-muted); border-bottom: 2px solid transparent;
+            font-weight: 500; transition: all 0.2s;
+            background: none; border: none; border-bottom: 2px solid transparent;
+            font-size: 1em; margin-bottom: -2px;
+        }
+        .tab:hover { color: var(--text); }
+        .tab.active { color: var(--blue); border-bottom-color: var(--blue); }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+
+        /* Cards */
+        .card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 24px;
+        }
+        .card h2 { color: var(--blue); margin-bottom: 16px; font-size: 1.3em; }
+        .card h3 { color: var(--text); margin: 16px 0 8px; }
+
+        /* ATS Score Gauge */
+        .ats-gauge {
+            display: flex; align-items: center; gap: 32px;
+            padding: 24px; margin-bottom: 24px;
+        }
+        .gauge-circle {
+            width: 160px; height: 160px; border-radius: 50%;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            font-size: 2.5em; font-weight: bold;
+            border: 6px solid;
+            flex-shrink: 0;
+        }
+        .gauge-circle .grade { font-size: 0.5em; color: var(--text-muted); }
+        .gauge-A { border-color: var(--green); color: var(--green); }
+        .gauge-B { border-color: #7ee787; color: #7ee787; }
+        .gauge-C { border-color: var(--yellow); color: var(--yellow); }
+        .gauge-D { border-color: var(--orange); color: var(--orange); }
+        .gauge-F { border-color: var(--red); color: var(--red); }
+        .gauge-info { flex: 1; }
+        .gauge-info h2 { margin-bottom: 8px; }
+
+        /* Check items */
+        .check-item {
+            display: flex; align-items: flex-start; gap: 12px;
+            padding: 12px 0;
+            border-bottom: 1px solid var(--border);
+        }
+        .check-item:last-child { border-bottom: none; }
+        .check-badge {
+            padding: 4px 10px; border-radius: 6px;
+            font-size: 0.8em; font-weight: 600; white-space: nowrap;
+            min-width: 48px; text-align: center;
+        }
+        .badge-pass { background: rgba(63,185,80,0.15); color: var(--green); }
+        .badge-warning { background: rgba(210,153,34,0.15); color: var(--yellow); }
+        .badge-fail { background: rgba(248,81,73,0.15); color: var(--red); }
+        .check-info { flex: 1; }
+        .check-name { font-weight: 600; }
+        .check-msg { color: var(--text-muted); font-size: 0.9em; margin-top: 2px; }
+        .check-details { color: var(--text-muted); font-size: 0.85em; margin-top: 4px; font-style: italic; }
+
+        /* Recommendations */
+        .rec-list { list-style: none; }
+        .rec-list li {
+            padding: 8px 12px; margin: 4px 0;
+            background: var(--surface2);
+            border-radius: 6px; font-size: 0.9em;
+            border-left: 3px solid;
+        }
+        .rec-critical { border-left-color: var(--red); }
+        .rec-warning { border-left-color: var(--yellow); }
+
+        /* Job Table */
+        .job-filters {
+            display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap;
+        }
+        .filter-btn {
+            padding: 6px 14px; border-radius: 20px;
+            border: 1px solid var(--border); background: var(--surface2);
+            color: var(--text-muted); cursor: pointer; font-size: 0.85em;
+            transition: all 0.2s;
+        }
+        .filter-btn:hover, .filter-btn.active {
+            border-color: var(--blue); color: var(--blue); background: rgba(88,166,255,0.1);
+        }
+        .search-box {
+            padding: 8px 14px; border-radius: 8px;
+            border: 1px solid var(--border); background: var(--surface2);
+            color: var(--text); font-size: 0.9em; width: 280px;
+        }
+        .search-box::placeholder { color: var(--text-muted); }
+
+        table {
+            width: 100%; border-collapse: collapse; font-size: 0.9em;
+        }
+        th {
+            text-align: left; padding: 12px 8px;
+            border-bottom: 2px solid var(--border);
+            color: var(--text-muted); font-weight: 600;
+            cursor: pointer; user-select: none;
+        }
+        th:hover { color: var(--blue); }
+        td {
+            padding: 10px 8px; border-bottom: 1px solid var(--border);
+            vertical-align: top;
+        }
+        tr:hover td { background: var(--surface2); }
+        .score-cell {
+            font-weight: 700; font-size: 1em;
+        }
+        .score-high { color: var(--green); }
+        .score-med { color: var(--yellow); }
+        .score-low { color: var(--red); }
+        .conf-badge {
+            padding: 2px 8px; border-radius: 10px; font-size: 0.75em;
+            font-weight: 600;
+        }
+        .conf-very-high { background: rgba(63,185,80,0.2); color: var(--green); }
+        .conf-high { background: rgba(126,231,135,0.2); color: #7ee787; }
+        .conf-medium { background: rgba(210,153,34,0.2); color: var(--yellow); }
+        .conf-low { background: rgba(248,81,73,0.2); color: var(--red); }
+        a { color: var(--blue); text-decoration: none; }
+        a:hover { text-decoration: underline; }
+        .tag {
+            display: inline-block; padding: 2px 8px; margin: 1px 2px;
+            border-radius: 4px; font-size: 0.75em;
+            background: rgba(188,140,255,0.15); color: var(--purple);
+        }
+        .tag-missing {
+            background: rgba(248,81,73,0.1); color: var(--red);
+        }
+        .warning-tag {
+            display: inline-block; padding: 2px 8px; margin: 1px;
+            border-radius: 4px; font-size: 0.75em;
+            background: rgba(210,153,34,0.15); color: var(--yellow);
+        }
+
+        /* Skills Gap */
+        .skills-gap-bar {
+            display: flex; align-items: center; gap: 12px;
+            padding: 6px 0;
+        }
+        .gap-label { min-width: 140px; font-size: 0.9em; }
+        .gap-bar-outer {
+            flex: 1; height: 20px; background: var(--surface2);
+            border-radius: 4px; overflow: hidden;
+        }
+        .gap-bar-inner {
+            height: 100%; border-radius: 4px;
+            background: linear-gradient(90deg, var(--red), var(--orange));
+        }
+        .gap-count { min-width: 60px; text-align: right; color: var(--text-muted); font-size: 0.85em; }
+
+        /* Multi-CV selector */
+        .cv-selector {
+            display: flex; gap: 8px; margin-bottom: 24px; flex-wrap: wrap;
+        }
+        .cv-btn {
+            padding: 8px 16px; border-radius: 8px;
+            border: 1px solid var(--border); background: var(--surface);
+            color: var(--text); cursor: pointer; font-size: 0.9em;
+        }
+        .cv-btn.active { border-color: var(--blue); background: rgba(88,166,255,0.1); }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .header .stats { flex-direction: column; gap: 8px; }
+            .ats-gauge { flex-direction: column; text-align: center; }
+            .job-filters { flex-direction: column; }
+            .search-box { width: 100%; }
+        }
+
+        .top-match { background: rgba(63,185,80,0.05); }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <h1>&#x1F4CB; ATSchecker Report</h1>
+            <p>Generated on March 05, 2026 at 16:18</p>
+            <div class="stats">
+                <div class="stat-box">
+                    <div class="num">1</div>
+                    <div class="label">CVs Analyzed</div>
+                </div>
+                <div class="stat-box">
+                    <div class="num">134</div>
+                    <div class="label">Jobs Found</div>
+                </div>
+                <div class="stat-box">
+                    <div class="num">49.4%</div>
+                    <div class="label">Avg Match Score</div>
+                </div>
+                <div class="stat-box">
+                    <div class="num">31</div>
+                    <div class="label">High-Likelihood Matches</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tabs -->
+        <div class="tabs">
+            <button class="tab active" onclick="switchTab('ats')">&#x1F50D; ATS Analysis</button>
+            <button class="tab" onclick="switchTab('jobs')">&#x1F4BC; Job Matches</button>
+            <button class="tab" onclick="switchTab('gap')">&#x1F4CA; Skills Gap</button>
+        </div>
+
+        <!-- TAB 1: ATS Analysis -->
+        <div id="tab-ats" class="tab-content active">
+            
+            <div class="card">
+                <div class="ats-gauge">
+                    <div class="gauge-circle gauge-B">
+                        87
+                        <div class="grade">Grade B</div>
+                    </div>
+                    <div class="gauge-info">
+                        <h2>main.pdf</h2>
+                        <p style="color: var(--text-muted);">
+                            
+                                Your CV is well-optimized for ATS systems. Minor improvements possible.
+                            
+                        </p>
+                    </div>
+                </div>
+
+                <h3>Detailed Checks</h3>
+                
+                <div class="check-item">
+                    <span class="check-badge badge-pass">10/10</span>
+                    <div class="check-info">
+                        <div class="check-name">Text Extractability</div>
+                        <div class="check-msg">Text extraction successful (5650 chars).</div>
+                        
+                        <div class="check-details">
+                            All content appears to be parseable text.<br>
+                        </div>
+                        
+                    </div>
+                </div>
+                
+                <div class="check-item">
+                    <span class="check-badge badge-warning">6/10</span>
+                    <div class="check-info">
+                        <div class="check-name">Image Detection</div>
+                        <div class="check-msg">1 image detected (likely a profile photo). Some ATS systems struggle with images.</div>
+                        
+                        <div class="check-details">
+                            Consider removing the photo for ATS-optimised applications.<br>German CVs commonly include photos, but US/UK-built ATS may choke on them.<br>
+                        </div>
+                        
+                    </div>
+                </div>
+                
+                <div class="check-item">
+                    <span class="check-badge badge-pass">10/10</span>
+                    <div class="check-info">
+                        <div class="check-name">Table Detection</div>
+                        <div class="check-msg">No tables detected — ATS-safe layout.</div>
+                        
+                    </div>
+                </div>
+                
+                <div class="check-item">
+                    <span class="check-badge badge-fail">4/10</span>
+                    <div class="check-info">
+                        <div class="check-name">Font Compatibility</div>
+                        <div class="check-msg">5 non-standard fonts detected — risk of garbled text.</div>
+                        
+                        <div class="check-details">
+                            Non-standard fonts: QYCEKG+CMMI10, RNNXXT+SFRM1000, TJHKIM+CMBX12, XXUUUT+CMBX10, YGCZXG+CMTI10<br>Fonts found: OKLYOA+CMR10, QYCEKG+CMMI10, RNNXXT+SFRM1000, TJHKIM+CMBX12, XXUUUT+CMBX10, YGCZXG+CMTI10<br>
+                        </div>
+                        
+                    </div>
+                </div>
+                
+                <div class="check-item">
+                    <span class="check-badge badge-fail">4/10</span>
+                    <div class="check-info">
+                        <div class="check-name">Special Characters</div>
+                        <div class="check-msg">4 types of special characters found — may cause ATS parsing issues.</div>
+                        
+                        <div class="check-details">
+                            Characters: '’' '”' '·' '¨'<br>
+                        </div>
+                        
+                    </div>
+                </div>
+                
+                <div class="check-item">
+                    <span class="check-badge badge-pass">10/10</span>
+                    <div class="check-info">
+                        <div class="check-name">Section Headings</div>
+                        <div class="check-msg">All 8 section headings are ATS-standard.</div>
+                        
+                        <div class="check-details">
+                            Sections: profile, experience, research, education, projects, technical skills, awards, languages<br>
+                        </div>
+                        
+                    </div>
+                </div>
+                
+                <div class="check-item">
+                    <span class="check-badge badge-pass">10/10</span>
+                    <div class="check-info">
+                        <div class="check-name">Contact Info Parsability</div>
+                        <div class="check-msg">3/3 key contact fields detected.</div>
+                        
+                        <div class="check-details">
+                            ✓ Email: aakaskhadka@gmail.com<br>✓ Phone: +4915563007796<br>✓ LinkedIn: linkedin.com/in/aakash-khadka<br>✓ GitHub: github.com/Aakash7khadka<br>
+                        </div>
+                        
+                    </div>
+                </div>
+                
+                <div class="check-item">
+                    <span class="check-badge badge-pass">10/10</span>
+                    <div class="check-info">
+                        <div class="check-name">File Size</div>
+                        <div class="check-msg">File size (0.17 MB) is well within ATS limits.</div>
+                        
+                        <div class="check-details">
+                            File size: 0.17 MB<br>
+                        </div>
+                        
+                    </div>
+                </div>
+                
+                <div class="check-item">
+                    <span class="check-badge badge-pass">9/10</span>
+                    <div class="check-info">
+                        <div class="check-name">Page Count</div>
+                        <div class="check-msg">Two-page CV — acceptable for 2+ years of experience.</div>
+                        
+                        <div class="check-details">
+                            Page count: 2<br>
+                        </div>
+                        
+                    </div>
+                </div>
+                
+                <div class="check-item">
+                    <span class="check-badge badge-pass">10/10</span>
+                    <div class="check-info">
+                        <div class="check-name">Text Order</div>
+                        <div class="check-msg">Text order is logical and ATS-parseable.</div>
+                        
+                        <div class="check-details">
+                            Detected order: profile → experience → projects → education → skills<br>
+                        </div>
+                        
+                    </div>
+                </div>
+                
+                <div class="check-item">
+                    <span class="check-badge badge-pass">9/10</span>
+                    <div class="check-info">
+                        <div class="check-name">Keyword Density</div>
+                        <div class="check-msg">20/26 role-relevant keywords found.</div>
+                        
+                        <div class="check-details">
+                            Found: aws, ci/cd, cloud, data, database, development, docker, engineering, etl, git, hadoop, java, linux, machine learning, pipeline, python, rest, software, spark, sql<br>Consider adding: agile, api, backend, kubernetes, microservices, testing<br>
+                        </div>
+                        
+                    </div>
+                </div>
+                
+                <div class="check-item">
+                    <span class="check-badge badge-pass">10/10</span>
+                    <div class="check-info">
+                        <div class="check-name">Hyperlink Validation</div>
+                        <div class="check-msg">All 3 hyperlinks are well-formed.</div>
+                        
+                        <div class="check-details">
+                            Total links found: 3<br>
+                        </div>
+                        
+                    </div>
+                </div>
+                
+                <div class="check-item">
+                    <span class="check-badge badge-pass">10/10</span>
+                    <div class="check-info">
+                        <div class="check-name">PDF Validity</div>
+                        <div class="check-msg">PDF is valid, unencrypted, and parseable.</div>
+                        
+                    </div>
+                </div>
+                
+                <div class="check-item">
+                    <span class="check-badge badge-pass">10/10</span>
+                    <div class="check-info">
+                        <div class="check-name">Header/Footer Content</div>
+                        <div class="check-msg">Critical information is in the main body — ATS-safe.</div>
+                        
+                    </div>
+                </div>
+                
+
+                
+                <h3 style="margin-top: 24px;">Recommendations</h3>
+                <ul class="rec-list">
+                    
+                    <li class="rec-warning">
+                        [WARNING] Image Detection: 1 image detected (likely a profile photo). Some ATS systems struggle with images.
+                    </li>
+                    
+                    <li class="rec-warning">
+                          → Consider removing the photo for ATS-optimised applications.
+                    </li>
+                    
+                    <li class="rec-warning">
+                          → German CVs commonly include photos, but US/UK-built ATS may choke on them.
+                    </li>
+                    
+                    <li class="rec-critical">
+                        [CRITICAL] Font Compatibility: 5 non-standard fonts detected — risk of garbled text.
+                    </li>
+                    
+                    <li class="rec-warning">
+                          → Non-standard fonts: QYCEKG+CMMI10, RNNXXT+SFRM1000, TJHKIM+CMBX12, XXUUUT+CMBX10, YGCZXG+CMTI10
+                    </li>
+                    
+                    <li class="rec-warning">
+                          → Fonts found: OKLYOA+CMR10, QYCEKG+CMMI10, RNNXXT+SFRM1000, TJHKIM+CMBX12, XXUUUT+CMBX10, YGCZXG+CMTI10
+                    </li>
+                    
+                    <li class="rec-critical">
+                        [CRITICAL] Special Characters: 4 types of special characters found — may cause ATS parsing issues.
+                    </li>
+                    
+                    <li class="rec-warning">
+                          → Characters: '’' '”' '·' '¨'
+                    </li>
+                    
+                </ul>
+                
+            </div>
+            
+        </div>
+
+        <!-- TAB 2: Job Matches -->
+        <div id="tab-jobs" class="tab-content">
+            <div class="card">
+                <h2>Job Matches — Sorted by Acceptance Likelihood</h2>
+
+                <div class="job-filters">
+                    <input type="text" class="search-box" id="jobSearch"
+                           placeholder="Search jobs..." onkeyup="filterJobs()">
+                    <button class="filter-btn active" onclick="filterCity(this, 'all')">All Cities</button>
+                    
+                    <button class="filter-btn" onclick="filterCity(this, 'Berlin')">Berlin</button>
+                    
+                    <button class="filter-btn" onclick="filterCity(this, 'Wolfsburg')">Wolfsburg</button>
+                    
+                    <button class="filter-btn" onclick="filterCity(this, 'Leipzig')">Leipzig</button>
+                    
+                </div>
+
+                <table id="jobTable">
+                    <thead>
+                        <tr>
+                            <th onclick="sortTable(0)">#</th>
+                            <th onclick="sortTable(1)">Title</th>
+                            <th onclick="sortTable(2)">Company</th>
+                            <th onclick="sortTable(3)">Location</th>
+                            <th onclick="sortTable(4)">Source</th>
+                            <th onclick="sortTable(5)">Match %</th>
+                            <th onclick="sortTable(6)">Likelihood</th>
+                            <th>Skills</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        
+                        <tr class="top-match" data-city="Leipzig">
+                            <td>1</td>
+                            <td><a href="https://de.indeed.com/rc/clk?jk=496abf3f2eb2aa1d&bb=9Z9eH8oWmzDJ4cccfvgX7xLDNyV6c9Qc72cWZER0pfBngbJ4FVuizo5kDzdGOzMB1ergySXAxtEefOjtT7ipqxxs3SmnGn9qI1p9F2yQILHj08jxDi4-AHUZGOO1lrPF&xkcb=SoC067M3me4pOYzN6R0LbzkdCdPP&fccid=b6bacf9db53d90e5&vjs=3" target="_blank">Machine Learning & AI - Mandatory Internship, Voluntary Internship, or Working Student (f/m/d)</a></td>
+                            <td>Sensape GmbH</td>
+                            <td>Leipzig</td>
+                            <td>Indeed</td>
+                            <td class="score-cell score-high">
+                                75.7%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-very-high">
+                                    Very High
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                <span class="tag">machine learning</span>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="top-match" data-city="Berlin">
+                            <td>2</td>
+                            <td><a href="https://www.arbeitnow.com/jobs/companies/dunkelblau-360-gmbh/ai-operations-automation-intern-berlin-320210" target="_blank">AI Operations & Automation Intern (m/f/d)</a></td>
+                            <td>Dunkelblau 360° GmbH</td>
+                            <td>Berlin</td>
+                            <td>Arbeitnow</td>
+                            <td class="score-cell score-high">
+                                75.1%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-very-high">
+                                    Very High
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                <span class="tag">langchain</span>
+                                
+                                <span class="tag">llm</span>
+                                
+                                <span class="tag">python</span>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="top-match" data-city="Berlin">
+                            <td>3</td>
+                            <td><a href="https://de.indeed.com/rc/clk?jk=346d72e6c6a82056&bb=t66Dih5FXkbJS83P450BKbni5aPjqTSn7RB4Z_biijNcJyEIxVtXY5JgDKKRirSd6PIlbSNkmK571yE6Mx1e2ErOtLhC5kEQelR3fP73n0Dd_waYM8hMLgT34jE2KWVT&xkcb=SoAP67M3me4sZDT45B0ObzkdCdPP&fccid=cc6e623ce335957a&vjs=3" target="_blank">Working Student Digital Product Management (all genders) – Beats & Bytes – Universal Music Entertainment GmbH</a></td>
+                            <td>Universal Music</td>
+                            <td>Berlin</td>
+                            <td>Indeed</td>
+                            <td class="score-cell score-high">
+                                73.6%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-high">
+                                    High
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                <span class="tag">git</span>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="top-match" data-city="Berlin">
+                            <td>4</td>
+                            <td><a href="https://www.arbeitnow.com/jobs/companies/miles-mobility/intern-marketing-social-media-x-berlin-332660" target="_blank">Intern Marketing & Social Media (w/m/d/x)</a></td>
+                            <td>MILES Mobility</td>
+                            <td>Berlin</td>
+                            <td>Arbeitnow</td>
+                            <td class="score-cell score-high">
+                                73.0%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-high">
+                                    High
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                <span class="tag">git</span>
+                                
+                                <span class="tag">rag</span>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="top-match" data-city="Berlin">
+                            <td>5</td>
+                            <td><a href="https://www.xing.com/jobs/berlin-duales-studium-wirtschaftsinformatik-webentwickler-php-react-js-150829025" target="_blank">Duales Studium Wirtschaftsinformatik - Webentwickler (PHP/React.js) (m/w/d)</a></td>
+                            <td></td>
+                            <td>Berlin</td>
+                            <td>XING</td>
+                            <td class="score-cell score-high">
+                                72.4%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-high">
+                                    High
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                <span class="tag">react</span>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="top-match" data-city="Berlin">
+                            <td>6</td>
+                            <td><a href="https://de.indeed.com/rc/clk?jk=e31fa37205033d8c&bb=7GsCcFv9p-izLsFFm_MYAsllz4WUTbibLAHrQngWfN6mNWBHLyIK5UI8OANmlsYT5na_6-jFMW9456gE9U7FN7rAtm9ks5Py1raZlWqnWTrB-Rz_Lh9xiqQj03MhZEUG&xkcb=SoBJ67M3me4sudT4Bh0JbzkdCdPP&fccid=cbfa34512b36b47b&cmp=Ben-Schneider-Marketing&ti=Programmierer&vjs=3" target="_blank">SaaS Programmierer/Coder mit AI / React & Dyad.sh / DE & Englisch possible</a></td>
+                            <td>Werbevideo.AI</td>
+                            <td>Berlin</td>
+                            <td>Indeed</td>
+                            <td class="score-cell score-high">
+                                71.6%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-high">
+                                    High
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                <span class="tag">react</span>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="top-match" data-city="Berlin">
+                            <td>7</td>
+                            <td><a href="https://www.arbeitnow.com/jobs/companies/eneto-gmbh/pflichtpraktikant-digital-marketing-berlin-188434" target="_blank">Pflichtpraktikant Digital Marketing (m/w/d)</a></td>
+                            <td>Eneto GmbH</td>
+                            <td>Berlin</td>
+                            <td>Arbeitnow</td>
+                            <td class="score-cell score-high">
+                                70.8%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-high">
+                                    High
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                <span class="tag">git</span>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="top-match" data-city="Helmstedt, Lower Saxony, Germany">
+                            <td>8</td>
+                            <td><a href="https://de.linkedin.com/jobs/view/werkstudent-automation-consulting-digital-transformation-m-w-d-at-e-on-grid-solutions-4375230741?position=4&pageNum=0&refId=tqcx6eZa88mQ%2B6s3%2B%2B0lEg%3D%3D&trackingId=8XEGwfJeE5qIBMbRvIHCjA%3D%3D" target="_blank">Werkstudent Automation Consulting & Digital Transformation (m/w/d)</a></td>
+                            <td>E.ON Grid Solutions</td>
+                            <td>Helmstedt, Lower Saxony, Germany</td>
+                            <td>LinkedIn</td>
+                            <td class="score-cell score-high">
+                                68.6%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-high">
+                                    High
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                <span class="tag">git</span>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="top-match" data-city="Berlin, Berlin, Germany">
+                            <td>9</td>
+                            <td><a href="https://www.arbeitnow.com/jobs/companies/wolt-english/data-scientist-consumer-pricing-and-discounts-berlin-209525" target="_blank">Data Scientist, Consumer Pricing and Discounts</a></td>
+                            <td>Wolt - English</td>
+                            <td>Berlin, Berlin, Germany</td>
+                            <td>Arbeitnow</td>
+                            <td class="score-cell score-high">
+                                65.5%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-high">
+                                    High
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                <span class="tag">data science</span>
+                                
+                                <span class="tag">rag</span>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="top-match" data-city="Berlin">
+                            <td>10</td>
+                            <td><a href="https://www.arbeitnow.com/jobs/companies/hypofriend-gmbh/werkstudentin-hr-office-und-event-management-berlin-26515" target="_blank">Werkstudent:in - HR, Office und Event Management (m/w/d)</a></td>
+                            <td>Hypofriend GmbH</td>
+                            <td>Berlin</td>
+                            <td>Arbeitnow</td>
+                            <td class="score-cell score-high">
+                                62.0%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-high">
+                                    High
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                <span class="tag">git</span>
+                                
+                                <span class="tag">rag</span>
+                                
+                                
+                                
+                                <span class="tag tag-missing">r</span>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Berlin">
+                            <td>11</td>
+                            <td><a href="https://www.arbeitnow.com/jobs/companies/yoc-ag/senior-machine-learning-engineer-berlin-56532" target="_blank">Senior Machine Learning Engineer (m/x/d)</a></td>
+                            <td>YOC AG</td>
+                            <td>Berlin</td>
+                            <td>Arbeitnow</td>
+                            <td class="score-cell score-high">
+                                60.2%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-high">
+                                    High
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                <span class="tag">ci/cd</span>
+                                
+                                <span class="tag">data science</span>
+                                
+                                <span class="tag">machine learning</span>
+                                
+                                <span class="tag">pandas</span>
+                                
+                                <span class="tag">python</span>
+                                
+                                
+                                
+                                <span class="tag tag-missing">scala</span>
+                                
+                                <span class="tag tag-missing">tensorflow</span>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Wolfsburg">
+                            <td>12</td>
+                            <td><a href="https://www.xing.com/jobs/karlsruhe-working-student-software-backend-development-python-151278845" target="_blank">Working Student Software Backend Development, Python, Go (m/f/d)</a></td>
+                            <td></td>
+                            <td>Wolfsburg</td>
+                            <td>XING</td>
+                            <td class="score-cell score-med">
+                                58.8%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-high">
+                                    High
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                <span class="tag">python</span>
+                                
+                                
+                                
+                                <span class="tag tag-missing">go</span>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Berlin">
+                            <td>13</td>
+                            <td><a href="https://de.indeed.com/rc/clk?jk=bd36b11867b61acc&bb=t66Dih5FXkbJS83P450BKXTCmpOqjrJqosSx0qVhhOwp9IRhdr4dRJ6aBn3zHUNxF_13NYWIzcMoWCEvOYXNr912JxgRKyGe7TXizr-Wdi0vZd7C7remyDkaWBMoITHX&xkcb=SoC767M3me4sZDT45B0PbzkdCdPP&fccid=e4dd3a5f79b12d62&vjs=3" target="_blank">Working Student Data Analysis & Delivery Management (m/f/d)</a></td>
+                            <td>1Komma5° GmbH</td>
+                            <td>Berlin</td>
+                            <td>Indeed</td>
+                            <td class="score-cell score-med">
+                                58.2%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-high">
+                                    High
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Leipzig">
+                            <td>14</td>
+                            <td><a href="https://de.indeed.com/rc/clk?jk=8737d6bb87ef2a02&bb=29dl9mdrPa8jB9pvoIlRVSj8R2U9EHhLhQ9MHOSgtmvwGyokpaqde-udiJ7O_ySNQr0h4g0i_mXa-PynpAjzsCvD9Le8qzufhvANd-2zJC81T2LQlrffmCaggZeG8Tf9InM3b80gpkp_Wl3zVmNFqc7L2GV6V0U7MGtiG3GPEXI%3D&xkcb=SoBM67M3me4qM5z7r50KbzkdCdPP&fccid=8eb6e636b039823c&vjs=3" target="_blank">Werkstudent Sports Data Operator (m/f/d)</a></td>
+                            <td>Sportradar</td>
+                            <td>Leipzig</td>
+                            <td>Indeed</td>
+                            <td class="score-cell score-med">
+                                58.0%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-high">
+                                    High
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Wolfsburg">
+                            <td>15</td>
+                            <td><a href="https://www.xing.com/jobs/erlangen-werkstudent-ai-data-solution-engineering-perspektive-uebernahme-151576118" target="_blank">Werkstudent (m/w/d) AI & Data Solution Engineering mit Perspektive auf Übernahme</a></td>
+                            <td></td>
+                            <td>Wolfsburg</td>
+                            <td>XING</td>
+                            <td class="score-cell score-med">
+                                57.8%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-high">
+                                    High
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Wolfsburg">
+                            <td>16</td>
+                            <td><a href="https://www.xing.com/jobs/karlsruhe-werkstudent-software-backend-development-python-go-151365836" target="_blank">Werkstudent Software Backend Development, Python, Go (d/m/w/x)</a></td>
+                            <td></td>
+                            <td>Wolfsburg</td>
+                            <td>XING</td>
+                            <td class="score-cell score-med">
+                                57.8%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-high">
+                                    High
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                <span class="tag">python</span>
+                                
+                                
+                                
+                                <span class="tag tag-missing">go</span>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Berlin">
+                            <td>17</td>
+                            <td><a href="https://de.indeed.com/rc/clk?jk=0dfe3f629fed7175&bb=t66Dih5FXkbJS83P450BKSzgK8qChKDFFihb503EIZdDwCSZV97B0GkMYXt_KWrPvKEjZtLlax--kjG79Voa4c84FAg_aCFRrdq88K1tTiFriWbex1NWf913eh3dRLI6&xkcb=SoAc67M3me4sZDT45B0KbzkdCdPP&fccid=7fceba211becf87e&vjs=3" target="_blank">Working Student Electronics Engineering</a></td>
+                            <td>Lovehoney Group</td>
+                            <td>Berlin</td>
+                            <td>Indeed</td>
+                            <td class="score-cell score-med">
+                                57.4%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-high">
+                                    High
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Berlin">
+                            <td>18</td>
+                            <td><a href="https://de.indeed.com/rc/clk?jk=b94b6c6a3a4f3465&bb=t66Dih5FXkbJS83P450BKRNpxjp8iD5Z54kadBtI3X6iquXti2Xh-9SJuE_21bBfLWi7y0-V38CJ9CFbhWnw2gnz6CRzPmsWCkzJ5xgrH3LBeuaGzTw0GQl3un86EUr9&xkcb=SoDP67M3me4sZDT45B0DbzkdCdPP&fccid=faa03d333b5dc8be&vjs=3" target="_blank">Working Student - Food product development, Physico-chemical characterisation & Data analysis</a></td>
+                            <td>Project Eaden</td>
+                            <td>Berlin</td>
+                            <td>Indeed</td>
+                            <td class="score-cell score-med">
+                                57.4%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-high">
+                                    High
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Berlin">
+                            <td>19</td>
+                            <td><a href="https://www.arbeitnow.com/jobs/companies/m2-technology-project-consulting-gmbh/junior-growth-manager-sales-renewals-berlin-498395" target="_blank">Junior Growth Manager Sales & Renewals (m/f/d)</a></td>
+                            <td>M2. technology & project consulting GmbH</td>
+                            <td>Berlin</td>
+                            <td>Arbeitnow</td>
+                            <td class="score-cell score-med">
+                                57.3%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-high">
+                                    High
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                <span class="tag">aws</span>
+                                
+                                <span class="tag">git</span>
+                                
+                                <span class="tag">linux</span>
+                                
+                                <span class="tag">rag</span>
+                                
+                                
+                                
+                                <span class="tag tag-missing">azure</span>
+                                
+                                <span class="tag tag-missing">elt</span>
+                                
+                                <span class="tag tag-missing">gcp</span>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Berlin">
+                            <td>20</td>
+                            <td><a href="https://de.indeed.com/rc/clk?jk=2f60c9eb3369382d&bb=41XBNgjC_LTp_uPsPC-JdIJdhtycfIgnA-bjodbjDcjOWfOCIUKqIbCPXjfXNcqyrSmdRz8_yyyeY8ntcflpxIfX9kV4MT3exXY0sniLyR__LzuuW338zlYFfwKsnRRi991YAKFLv-ZiLpWG5dzMFvZz-1XtclYZMfLtjWKWmn8%3D&xkcb=SoDI67M3me4s15TNzp0ObzkdCdPP&fccid=2caa5e4c3ef75d98&vjs=3" target="_blank">Werkstudent: AI Research & Data Evaluation</a></td>
+                            <td>LILT</td>
+                            <td>Berlin</td>
+                            <td>Indeed</td>
+                            <td class="score-cell score-med">
+                                56.5%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-high">
+                                    High
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Berlin">
+                            <td>21</td>
+                            <td><a href="https://de.indeed.com/rc/clk?jk=4ed03a98449e36b0&bb=t66Dih5FXkbJS83P450BKbC0pJONOmpOpZbUlNlWVYqkqg1J0MrDs5SxTLuzd5XXvNTV29NgfcHjC5gOr0JxknEPAQummDecw6T6435HGd650LHAo0h3v2KtdS0BznK8&xkcb=SoD167M3me4sZDT45B0FbzkdCdPP&fccid=fb75933edd65f432&vjs=3" target="_blank">Working Student - Optics Engineering (m/f/d)</a></td>
+                            <td>Corning</td>
+                            <td>Berlin</td>
+                            <td>Indeed</td>
+                            <td class="score-cell score-med">
+                                56.5%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-high">
+                                    High
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Berlin">
+                            <td>22</td>
+                            <td><a href="https://www.xing.com/jobs/berlin-working-student-ai-software-engineer-149986344" target="_blank">Working Student: AI Software Engineer (M/ F/ D)</a></td>
+                            <td></td>
+                            <td>Berlin</td>
+                            <td>XING</td>
+                            <td class="score-cell score-med">
+                                56.2%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-high">
+                                    High
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Berlin, Berlin, Germany">
+                            <td>23</td>
+                            <td><a href="https://de.linkedin.com/jobs/view/werkstudent-software-engineering-customer-experience-m-w-d-at-hubert-burda-media-4378735956?position=2&pageNum=0&refId=3jVBK5xfB4Q2jIhJFfMX4g%3D%3D&trackingId=Dx6Z0CfXEtNfv%2FSwNR4BeA%3D%3D" target="_blank">Werkstudent Software Engineering Customer Experience (m/w/d)</a></td>
+                            <td>Hubert Burda Media</td>
+                            <td>Berlin, Berlin, Germany</td>
+                            <td>LinkedIn</td>
+                            <td class="score-cell score-med">
+                                56.1%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-high">
+                                    High
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Berlin">
+                            <td>24</td>
+                            <td><a href="https://de.indeed.com/rc/clk?jk=c31e30dfc70a47f0&bb=7GsCcFv9p-izLsFFm_MYAmpZk_0LiAZyq_zT51ARNKA6Roz8w1sqmgFRR7wa8HkbW6N2DwtrKEbO239_W7fhANfDMNW7obmLUy2HTZJM0fzL1TghT6Hjiv5fUd0FsC_e&xkcb=SoDU67M3me4sudT4Bh0KbzkdCdPP&fccid=8190723d61783d46&vjs=3" target="_blank">Werkstudent Software Engineering Customer Experience (m/w/d)</a></td>
+                            <td>BurdaForward</td>
+                            <td>Berlin</td>
+                            <td>Indeed</td>
+                            <td class="score-cell score-med">
+                                56.1%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-high">
+                                    High
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Berlin">
+                            <td>25</td>
+                            <td><a href="https://www.xing.com/jobs/berlin-working-student-cost-stream-engineering-151253822" target="_blank">Working Student Cost and Value Stream Engineering</a></td>
+                            <td></td>
+                            <td>Berlin</td>
+                            <td>XING</td>
+                            <td class="score-cell score-med">
+                                55.8%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-high">
+                                    High
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Berlin">
+                            <td>26</td>
+                            <td><a href="https://de.indeed.com/rc/clk?jk=bf6d4f24bcd5dbb4&bb=t66Dih5FXkbJS83P450BKZX55xt2opt5mUBExJ4shYe6WCaecgJO18RuLlNOLbx82KXT2sIy2QifoVQMXE6CHBIFmydItpcVEU_rMnvxet_mB-yvuQkjBvsQ2GrmINxh&xkcb=SoCS67M3me4sZDT45B0NbzkdCdPP&fccid=74e3fe9005fd70fc&vjs=3" target="_blank">(Senior) Data Scientist / Engineer (all genders) - Rider Feedback</a></td>
+                            <td>MOIA</td>
+                            <td>Berlin</td>
+                            <td>Indeed</td>
+                            <td class="score-cell score-med">
+                                55.7%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-high">
+                                    High
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Berlin, Berlin, Germany">
+                            <td>27</td>
+                            <td><a href="https://de.linkedin.com/jobs/view/working-student-f-m-d-software-development-for-strategic-innovation-projects-at-sap-4379448768?position=1&pageNum=0&refId=3jVBK5xfB4Q2jIhJFfMX4g%3D%3D&trackingId=ZqMKizmWbXvrFTgkTLoNrg%3D%3D" target="_blank">Working Student (f/m/d) - Software Development for Strategic Innovation Projects</a></td>
+                            <td>SAP</td>
+                            <td>Berlin, Berlin, Germany</td>
+                            <td>LinkedIn</td>
+                            <td class="score-cell score-med">
+                                55.6%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-high">
+                                    High
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Leipzig">
+                            <td>28</td>
+                            <td><a href="https://de.indeed.com/rc/clk?jk=8a0c4efab72a8106&bb=Xg63Tpc7oidCSJmEsmzuRwc8eW6NhWHHTwB3d32i8Q0CC80gUx7C5ZSqmHIjnQZpDsYXDECVVlbc25IeBED8c2ce3E5r6Mxd_aiyekhMhIP9Lzx_mlL4FisGa1xIPumCi7Bs-0Q6lDOfjF1XY97G41DPyS5nc5CZ_m7xcl9PwvQ%3D&xkcb=SoB367M3me4pSzz45B0LbzkdCdPP&fccid=fe2d21eef233e94a&vjs=3" target="_blank">Safety Specialist Internship</a></td>
+                            <td>Amazon Logistik GmbH - A33</td>
+                            <td>Leipzig</td>
+                            <td>Indeed</td>
+                            <td class="score-cell score-med">
+                                55.5%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-high">
+                                    High
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Berlin">
+                            <td>29</td>
+                            <td><a href="https://de.indeed.com/rc/clk?jk=462515c7c82af11f&bb=t66Dih5FXkbJS83P450BKTsoY_5hfI0TbeWX-BH9kD5GquNFV58-p5LJqc1kwZLyRyZD8vRWEBsIuF5-KWKpi_5rEZlfD7B50snctzNsqueH4cGTuX5KwpSAplEkmhI4&xkcb=SoAm67M3me4sZDT45B0MbzkdCdPP&fccid=990cf946905bfee3&vjs=3" target="_blank">Business Development & AI Automation Working Student</a></td>
+                            <td>Enjins</td>
+                            <td>Berlin</td>
+                            <td>Indeed</td>
+                            <td class="score-cell score-med">
+                                55.3%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-high">
+                                    High
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Berlin">
+                            <td>30</td>
+                            <td><a href="https://de.indeed.com/rc/clk?jk=643464aca27a3068&bb=t66Dih5FXkbJS83P450BKQTjqj8HDRABnzf7ZDSIV7Dseov8eCZwyQ1If0sopkT0UBoCm0tqdLaow4b0Zb-SFnSFKx82iExlzf7yi7YYh5W7t_fFFhRlrKrhewiC-cWG&xkcb=SoBo67M3me4sZDT45B0GbzkdCdPP&fccid=8bbb9380ff8dc5b4&vjs=3" target="_blank">Working Student Supply Planning (all genders)</a></td>
+                            <td>Sunday Natural Products GmbH</td>
+                            <td>Berlin</td>
+                            <td>Indeed</td>
+                            <td class="score-cell score-med">
+                                55.2%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-high">
+                                    High
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Berlin">
+                            <td>31</td>
+                            <td><a href="https://www.xing.com/jobs/berlin-working-student-business-operations-151497611" target="_blank">Working Student – Business & Operations (m/f/d)</a></td>
+                            <td></td>
+                            <td>Berlin</td>
+                            <td>XING</td>
+                            <td class="score-cell score-med">
+                                55.2%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-high">
+                                    High
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Berlin">
+                            <td>32</td>
+                            <td><a href="https://de.indeed.com/rc/clk?jk=de1a78fecd8dbffb&bb=t66Dih5FXkbJS83P450BKcwSQzCvv8mJ3hDrDVpI4tN82mKch1NsMj2Vqp5f_ekMtuiuuZAae6GYXQwKQLoPNaTMJ_3vqHsBU5fL6LbYOKUqGVzumnDKHccCydWv3gds&xkcb=SoBS67M3me4sZDT45B0AbzkdCdPP&fccid=74e3fe9005fd70fc&vjs=3" target="_blank">Tech Lead - Data and Analytics Engineering (all genders) Fleet Analytics</a></td>
+                            <td>MOIA</td>
+                            <td>Berlin</td>
+                            <td>Indeed</td>
+                            <td class="score-cell score-med">
+                                54.8%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Wolfsburg">
+                            <td>33</td>
+                            <td><a href="https://www.xing.com/jobs/duesseldorf-ai-powered-backend-development-working-student-j25838-151515155" target="_blank">AI-Powered Backend Development - Working Student - J25838</a></td>
+                            <td></td>
+                            <td>Wolfsburg</td>
+                            <td>XING</td>
+                            <td class="score-cell score-med">
+                                54.7%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Wolfsburg">
+                            <td>34</td>
+                            <td><a href="https://www.xing.com/jobs/hamburg-working-student-cabin-engineering-lavatory-galley-design-151597809" target="_blank">Working Student (d/f/m) within Cabin Engineering: Lavatory / Galley Design</a></td>
+                            <td></td>
+                            <td>Wolfsburg</td>
+                            <td>XING</td>
+                            <td class="score-cell score-med">
+                                54.7%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Berlin">
+                            <td>35</td>
+                            <td><a href="https://de.indeed.com/rc/clk?jk=57170565fbf4af75&bb=41XBNgjC_LTp_uPsPC-JdAeaPpSxH1dZbXtFSgfU4DH_eEZg3VC4MMMgP81hfTKim8HtzNrY5IiICY04bY8uzz_5Oi9XGE6CLeRtZxsAX_avHFFWJHQbhVkCJB1NFU9ppHfutLtBJU2zvpt4bM6kkOtJvUDyzAHzR-7WXi4YCFM%3D&xkcb=SoC867M3me4s15TNzp0CbzkdCdPP&fccid=6537791622ea2d89&vjs=3" target="_blank">Working Student Pre-Sales Support Specialist (m/w/d)</a></td>
+                            <td>Caresyntax</td>
+                            <td>Berlin</td>
+                            <td>Indeed</td>
+                            <td class="score-cell score-med">
+                                54.6%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Berlin">
+                            <td>36</td>
+                            <td><a href="https://de.indeed.com/rc/clk?jk=ac5899a9f195ee2c&bb=41XBNgjC_LTp_uPsPC-JdEkMVRvcbsMwEcvW6QZYvB96otQmehQQy5rrsTZ7AL-k35fYuwmb3Gq6d2ob9LcjnpxUNHLGDB-zOo-aodBKRiJAkwe7N_f8B73TNxzDXLiqE1gY_2c4WpHet1sFyx4e5GISkVvJ63bEDCwqZ8crCwU%3D&xkcb=SoAb67M3me4s15TNzp0HbzkdCdPP&fccid=38d7ae2bf7ed59f5&vjs=3" target="_blank">Werkstudent (mwd) Software Development & Analytics</a></td>
+                            <td>HMS Analytical Software GmbH</td>
+                            <td>Berlin</td>
+                            <td>Indeed</td>
+                            <td class="score-cell score-med">
+                                54.4%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Berlin">
+                            <td>37</td>
+                            <td><a href="https://de.indeed.com/rc/clk?jk=aeeb55b3c7710380&bb=t66Dih5FXkbJS83P450BKV_IHV5Fg7XR3T6ppZAAlvs7kEBQx5kGhxnPbC0aRnJupfv9M-D1lNtC8mkczAcLNzCTevDGhKnUema9h2hYfjhWk_tSVYKSnhEgTWH1dP1X&xkcb=SoCo67M3me4sZDT45B0LbzkdCdPP&fccid=dd616958bd9ddc12&vjs=3" target="_blank">Math Content Creator Working Student/ Intern (m/f/d)</a></td>
+                            <td>Dojostack GmbH</td>
+                            <td>Berlin</td>
+                            <td>Indeed</td>
+                            <td class="score-cell score-med">
+                                54.4%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Berlin">
+                            <td>38</td>
+                            <td><a href="https://de.indeed.com/rc/clk?jk=cb7ffcf3d8d34f8e&bb=t66Dih5FXkbJS83P450BKZ4rbX7aCDZKXYqEHtl-5yluRd1HCIDF77OXmYhR78P2Xad0dJVfXiUAJpNHW9VJtp5oh3OB8Uj3TQ1eZQDdoMrhgFXnbk2RsnkuzSm05Wu7&xkcb=SoDm67M3me4sZDT45B0BbzkdCdPP&fccid=cf60b0e606708831&vjs=3" target="_blank">Intern/Working Student Talent Acqusition (w/m/d)</a></td>
+                            <td>Billie</td>
+                            <td>Berlin</td>
+                            <td>Indeed</td>
+                            <td class="score-cell score-med">
+                                54.1%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Berlin, Berlin, Germany">
+                            <td>39</td>
+                            <td><a href="https://de.linkedin.com/jobs/view/werkstudent-in-im-bereich-strategischer-einkauf-no-internship-at-asml-4375408728?position=8&pageNum=0&refId=8EIu7c6D%2BXQOl2G6Wu25nQ%3D%3D&trackingId=u4drHuG79aLjgI1%2BWc8LNw%3D%3D" target="_blank">Werkstudent:in im Bereich Strategischer Einkauf (no internship)</a></td>
+                            <td>ASML</td>
+                            <td>Berlin, Berlin, Germany</td>
+                            <td>LinkedIn</td>
+                            <td class="score-cell score-med">
+                                53.9%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Leipzig">
+                            <td>40</td>
+                            <td><a href="https://www.xing.com/jobs/leipzig-werkstudent-produktmanagement-einstieg-ki-produktentwicklung-reise-151519137" target="_blank">Werkstudent (m/w/d) Produktmanagement – Dein Einstieg in die KI-Produktentwicklung Reise</a></td>
+                            <td></td>
+                            <td>Leipzig</td>
+                            <td>XING</td>
+                            <td class="score-cell score-med">
+                                53.7%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Berlin">
+                            <td>41</td>
+                            <td><a href="https://de.indeed.com/rc/clk?jk=1d755f760c5b99ca&bb=41XBNgjC_LTp_uPsPC-JdEzbCCE_oKhZi9I6h2T9-d5OiAVX8p5OqS5IDZ5Ix7xlXBhTcFPeAyJ34JkWKtrT6Nnon-hFKSehTUDxoBwSXi44yWTnlNzkX5hX5H41hkdIxfz5oaBElyN157pqN_CLM5xtzu7pnIlu2PGJqyneLGU%3D&xkcb=SoDb67M3me4s15TNzp0KbzkdCdPP&fccid=2bd25e816125b283&vjs=3" target="_blank">Werkstudent:in Learning Content & Product (all genders)</a></td>
+                            <td>StackFuel GmbH</td>
+                            <td>Berlin</td>
+                            <td>Indeed</td>
+                            <td class="score-cell score-med">
+                                53.6%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Berlin, Berlin, Germany">
+                            <td>42</td>
+                            <td><a href="https://de.linkedin.com/jobs/view/werkstudent-in-in-der-serviceabteilung-mirror-block-no-internship-at-asml-4371456944?position=7&pageNum=0&refId=8EIu7c6D%2BXQOl2G6Wu25nQ%3D%3D&trackingId=2PN8S%2BT6OcdPZSGx2TmU5Q%3D%3D" target="_blank">Werkstudent:in in der Serviceabteilung Mirror Block (no internship)</a></td>
+                            <td>ASML</td>
+                            <td>Berlin, Berlin, Germany</td>
+                            <td>LinkedIn</td>
+                            <td class="score-cell score-med">
+                                53.1%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Leipzig, Saxony, Germany">
+                            <td>43</td>
+                            <td><a href="https://de.linkedin.com/jobs/view/werkstudent-prompting-operative-ki-einf%C3%BChrung-w-m-d-at-kpmg-deutschland-4361991253?position=8&pageNum=0&refId=QPOUJRLjGuzPjbZzboM9cA%3D%3D&trackingId=3xqth2OYjk%2F4CV0EANkzEw%3D%3D" target="_blank">Werkstudent Prompting & Operative KI Einführung (w/m/d)</a></td>
+                            <td>KPMG Deutschland</td>
+                            <td>Leipzig, Saxony, Germany</td>
+                            <td>LinkedIn</td>
+                            <td class="score-cell score-med">
+                                52.9%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Leipzig, Saxony, Germany">
+                            <td>44</td>
+                            <td><a href="https://de.linkedin.com/jobs/view/werkstudent-m-w-d-app-und-webapp-entwicklung-reise-at-check24-vergleichsportal-gmbh-4373940991?position=7&pageNum=0&refId=QPOUJRLjGuzPjbZzboM9cA%3D%3D&trackingId=%2BT3xp29GbvTbX%2FBjoQjqGw%3D%3D" target="_blank">Werkstudent (m/w/d) App- und WebApp-Entwicklung Reise</a></td>
+                            <td>CHECK24 Vergleichsportal GmbH</td>
+                            <td>Leipzig, Saxony, Germany</td>
+                            <td>LinkedIn</td>
+                            <td class="score-cell score-med">
+                                52.7%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Leipzig">
+                            <td>45</td>
+                            <td><a href="https://www.xing.com/jobs/leipzig-werkstudent-app-webapp-entwicklung-reise-150986604" target="_blank">Werkstudent (m/w/d) App- und WebApp-Entwicklung Reise</a></td>
+                            <td></td>
+                            <td>Leipzig</td>
+                            <td>XING</td>
+                            <td class="score-cell score-med">
+                                52.7%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Brunswick, Lower Saxony, Germany">
+                            <td>46</td>
+                            <td><a href="https://de.linkedin.com/jobs/view/working-student-frontend-development-react-typescript-at-gauss-robotics-4375221996?position=1&pageNum=0&refId=xeYnV9zV1k0vs4n9Snn%2BVA%3D%3D&trackingId=At1%2F5zd6uZbW7h8WFqiksQ%3D%3D" target="_blank">Working Student - Frontend Development (React/TypeScript)</a></td>
+                            <td>Gauss Robotics</td>
+                            <td>Brunswick, Lower Saxony, Germany</td>
+                            <td>LinkedIn</td>
+                            <td class="score-cell score-med">
+                                52.5%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                <span class="tag">react</span>
+                                
+                                
+                                
+                                <span class="tag tag-missing">typescript</span>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Wolfsburg, Lower Saxony, Germany">
+                            <td>47</td>
+                            <td><a href="https://de.linkedin.com/jobs/view/werkstudent-power-platform-business-automation-m365-at-edag-group-4374394095?position=5&pageNum=0&refId=tqcx6eZa88mQ%2B6s3%2B%2B0lEg%3D%3D&trackingId=CUNrhri%2FNpgLouxVnJU%2BxA%3D%3D" target="_blank">Werkstudent* Power Platform & Business Automation M365</a></td>
+                            <td>EDAG Group</td>
+                            <td>Wolfsburg, Lower Saxony, Germany</td>
+                            <td>LinkedIn</td>
+                            <td class="score-cell score-med">
+                                52.2%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Wolfsburg, Lower Saxony, Germany">
+                            <td>48</td>
+                            <td><a href="https://de.linkedin.com/jobs/view/werkstudent-umfeldsimulation-at-edag-group-4267779917?position=3&pageNum=0&refId=tqcx6eZa88mQ%2B6s3%2B%2B0lEg%3D%3D&trackingId=cgKULStAfAJDu6X9IufmYQ%3D%3D" target="_blank">Werkstudent* Umfeldsimulation</a></td>
+                            <td>EDAG Group</td>
+                            <td>Wolfsburg, Lower Saxony, Germany</td>
+                            <td>LinkedIn</td>
+                            <td class="score-cell score-med">
+                                52.2%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Berlin">
+                            <td>49</td>
+                            <td><a href="https://de.indeed.com/rc/clk?jk=046ba4e31dd98b96&bb=t66Dih5FXkbJS83P450BKR2a8h6oykQafD1tMGXyULfiNSLnmHU0EUbEYEGJzlj-HUDu3giG3WG-VkN7AIjutm4-BGm522tJ4ZdGcHxpvyv61txBxj2PVtvHX0omv8fy&xkcb=SoDc67M3me4sZDT45B0HbzkdCdPP&fccid=7f755db7b19cdead&vjs=3" target="_blank">Platform Engineer (m/f/d) (AI Startup)</a></td>
+                            <td>Deltia</td>
+                            <td>Berlin</td>
+                            <td>Indeed</td>
+                            <td class="score-cell score-med">
+                                52.1%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Berlin">
+                            <td>50</td>
+                            <td><a href="https://de.indeed.com/rc/clk?jk=4c7ec737f859e8f1&bb=41XBNgjC_LTp_uPsPC-JdFPT1_Yi7200vq7F_KILSnbhPskFY8LucZcqwPUMqBrniCthIAaVPOeBOrhRk3ac6lrjtvLuYve7n75E2ewJK7cumXdPjSNgVQyZuVtPKKgB82Ld4bMCjBf7RWniSxABOQo9WXYA-srn1jgQwky3-nM%3D&xkcb=SoAh67M3me4s15TNzp0BbzkdCdPP&fccid=54494a9a5f9374cc&vjs=3" target="_blank">AI Engineering Intern (m/f/d)</a></td>
+                            <td>BIT Capital</td>
+                            <td>Berlin</td>
+                            <td>Indeed</td>
+                            <td class="score-cell score-med">
+                                52.1%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Leipzig">
+                            <td>51</td>
+                            <td><a href="https://de.indeed.com/rc/clk?jk=5edbb073a36832a9&bb=Xg63Tpc7oidCSJmEsmzuR7jrFuxH1Cjk1fJOpznK9l0u7mRra5fsDCpumvGlVr_lNEl39j1i27CgvLSSQIYoqiagJozZRj0bu8dwrCjB8eqZdT5NjQgHLXzIxvOzrohucefo7n4YaK2I6cEZqIIFUtZlfP61SLtLw1meEyZCzc8%3D&xkcb=SoDD67M3me4pSzz45B0KbzkdCdPP&fccid=c69648529d489af8&vjs=3" target="_blank">PhD position (f/m/x)- Modelling of corrosion and gas production at the steel-clay interface</a></td>
+                            <td>Helmholtz-Zentrum für Umweltforschung UFZ</td>
+                            <td>Leipzig</td>
+                            <td>Indeed</td>
+                            <td class="score-cell score-med">
+                                52.0%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Greater Leipzig Area">
+                            <td>52</td>
+                            <td><a href="https://de.linkedin.com/jobs/view/werkstudent-in-firmware-porgrammierung-m-w-d-at-bruker-optics-4363153251?position=6&pageNum=0&refId=QPOUJRLjGuzPjbZzboM9cA%3D%3D&trackingId=mSq3iKptWqjSZZa%2Fc74HBQ%3D%3D" target="_blank">Werkstudent/-in Firmware-Porgrammierung (m/w/d)</a></td>
+                            <td>Bruker Optics</td>
+                            <td>Greater Leipzig Area</td>
+                            <td>LinkedIn</td>
+                            <td class="score-cell score-med">
+                                51.8%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Berlin">
+                            <td>53</td>
+                            <td><a href="https://de.indeed.com/rc/clk?jk=25cd7df2ed3f2205&bb=t66Dih5FXkbJS83P450BKZulTZZNycINkXXrT9NNTyzFlryNDRDzzSDLIMP6CDXqKcUU9fckW1wGBFoUZ85_gSnCFW74rzdXDIY_5GYYsQQi9vEIHe9X17oPV0gv5zi6&xkcb=SoA167M3me4sZDT45B0IbzkdCdPP&fccid=613e2748e4dc5d31&vjs=3" target="_blank">Research Associate (m/f/d) in the field of “Optofluxonics - Patterned light shaping in cryogenic environment for opto-fluxonic measurements”</a></td>
+                            <td>TU Braunschweig, Institut für Halbleitertechnik</td>
+                            <td>Berlin</td>
+                            <td>Indeed</td>
+                            <td class="score-cell score-med">
+                                51.7%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Berlin">
+                            <td>54</td>
+                            <td><a href="https://de.indeed.com/rc/clk?jk=1b1d3213541d1c1f&bb=t66Dih5FXkbJS83P450BKWeiLZHC4t3YBTulTKL6ZqC7m43Q4vJwKOeOTfOGKQN5BUwbxGdpFtRYwj3GbGVFkTa-a8kuz6X2VpW1yFSOBQ7pWvz_MBe_lBDjxAw3fiLg&xkcb=SoCB67M3me4sZDT45B0JbzkdCdPP&fccid=476ec35b4d15d06a&vjs=3" target="_blank">Junior Software QA Tester</a></td>
+                            <td>Recare Deutschland GmbH</td>
+                            <td>Berlin</td>
+                            <td>Indeed</td>
+                            <td class="score-cell score-med">
+                                51.5%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Wolfsburg">
+                            <td>55</td>
+                            <td><a href="https://de.indeed.com/rc/clk?jk=2d2bcbbeef18404f&bb=2LjnexZi7_5bs1cVfOv14YEdbci78LLU9BNUndXwDrYOe9jsT2SbNvWH7a9ljqZXJU8laehcN5XAISnPF1OG3GPI-v8xbn13Tzm2fmx7GJ83EcW_bPfJYmI6XZ0reewK&xkcb=SoA867M3me4qrszCUx0KbzkdCdPP&fccid=74e3fe9005fd70fc&vjs=3" target="_blank">Technical Platform Owner (all genders) - OTA</a></td>
+                            <td>MOIA</td>
+                            <td>Wolfsburg</td>
+                            <td>Indeed</td>
+                            <td class="score-cell score-med">
+                                51.1%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Leipzig">
+                            <td>56</td>
+                            <td><a href="https://www.xing.com/jobs/leipzig-duales-studium-informatik-reise-150325751" target="_blank">Duales Studium Informatik Reise</a></td>
+                            <td></td>
+                            <td>Leipzig</td>
+                            <td>XING</td>
+                            <td class="score-cell score-med">
+                                50.9%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Berlin">
+                            <td>57</td>
+                            <td><a href="https://www.xing.com/jobs/berlin-duales-studium-investment-analyst-trader-web-developer-150946337" target="_blank">Duales Studium Investment Analyst / Trader - Web Developer (m/w/d)</a></td>
+                            <td></td>
+                            <td>Berlin</td>
+                            <td>XING</td>
+                            <td class="score-cell score-med">
+                                50.9%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Leipzig">
+                            <td>58</td>
+                            <td><a href="https://de.indeed.com/rc/clk?jk=20d44744d0c75f97&bb=29dl9mdrPa8jB9pvoIlRVcWLqZ53dUK1m3awxb_VxEcC46khkRaNUzSxwIMQpM5-DhjeRxm6X3uAJ7qKsaHIRhqq9ntO2DkKHUOHNznO4m2tcerKVBtAG1p_OinAWTIfzHvI3rCObkXa7gXRbFHJ7wlp_RYHKmil9l7tKQmu_5Q%3D&xkcb=SoD467M3me4qM5z7r50LbzkdCdPP&fccid=e449d0ab168b2417&vjs=3" target="_blank">(Senior) BI-Entwickler - Qlik & Snowflake (w/d/m)</a></td>
+                            <td>nextbike GmbH</td>
+                            <td>Leipzig</td>
+                            <td>Indeed</td>
+                            <td class="score-cell score-med">
+                                50.7%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Wolfsburg">
+                            <td>59</td>
+                            <td><a href="https://de.indeed.com/rc/clk?jk=0c42836114f1bd67&bb=GSvn8dlt8CWoT_zW1-avLd6z0rL8VkCnjJr00kmZj4JrL2mfgFraskXYfr6rbpsNP7UnK1scekPUN3REJEoFGhBtrW7ADLI-zIhejOYfKRUFa-7mVnCIFWqThqlS4irS&xkcb=SoB067M3me4q-FT7r50ObzkdCdPP&fccid=74e3fe9005fd70fc&vjs=3" target="_blank">Product Owner (all genders) - SIM/MNO Management</a></td>
+                            <td>MOIA</td>
+                            <td>Wolfsburg</td>
+                            <td>Indeed</td>
+                            <td class="score-cell score-med">
+                                50.4%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Wolfsburg">
+                            <td>60</td>
+                            <td><a href="https://de.indeed.com/rc/clk?jk=117589fe7aaa186c&bb=GSvn8dlt8CWoT_zW1-avLQlifsN4-vpQpZWId5kUyl_JqsUzu5yBKcWku8IPmjKodgGpmSjpg5caLuuQG6OcJHuq3Ldfc3VUtOsJmXcbjuewI3Amuj2KRmpNJbXQ8iCo&xkcb=SoBd67M3me4q-FT7r50MbzkdCdPP&fccid=263be8b9afb34d7d&vjs=3" target="_blank">Intern Characterization Steels Body Applications (f/m/d)</a></td>
+                            <td>Volkswagen</td>
+                            <td>Wolfsburg</td>
+                            <td>Indeed</td>
+                            <td class="score-cell score-med">
+                                50.3%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Wolfsburg">
+                            <td>61</td>
+                            <td><a href="https://de.indeed.com/rc/clk?jk=a02a4e47a7417936&bb=GSvn8dlt8CWoT_zW1-avLbcwAhX91JZIW4hvOI77DzDbYbSCZMhCEraaTvFvYiAQXWEcygX_Qn57hxZBs-7HI1R8UptUUizIBf0jYxv_3ZsEcI2Zs7xGjf-AiY2OikaT&xkcb=SoBO67M3me4q-FT7r50IbzkdCdPP&fccid=74e3fe9005fd70fc&vjs=3" target="_blank">Product Manager (all genders) - Diagnostics</a></td>
+                            <td>MOIA</td>
+                            <td>Wolfsburg</td>
+                            <td>Indeed</td>
+                            <td class="score-cell score-med">
+                                50.0%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Wolfsburg">
+                            <td>62</td>
+                            <td><a href="https://de.indeed.com/rc/clk?jk=1803387eee8faf51&bb=GSvn8dlt8CWoT_zW1-avLQDHESfXLvq2HHpxTvkNGzHsCquxXfUArZsOY_VzNE29K-MNTr1qjY59oMfgD_2qsGPxdkPMHCfkAJnnIYQ5Z5TSI6rGRwDV8rBOEo3GvKae&xkcb=SoDA67M3me4q-FT7r50PbzkdCdPP&fccid=74e3fe9005fd70fc&vjs=3" target="_blank">Radar Component Owner (all genders) - BTV</a></td>
+                            <td>MOIA</td>
+                            <td>Wolfsburg</td>
+                            <td>Indeed</td>
+                            <td class="score-cell score-med">
+                                49.7%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Brunswick, Lower Saxony, Germany">
+                            <td>63</td>
+                            <td><a href="https://de.linkedin.com/jobs/view/space-situational-awareness-internship-master-thesis-at-okapi-orbits-4355326849?position=4&pageNum=0&refId=iBA%2FozyD3Fdc95siz772Xw%3D%3D&trackingId=18ez%2Fxe99JJrbrwHPrBIJA%3D%3D" target="_blank">Space Situational Awareness Internship / Master Thesis</a></td>
+                            <td>OKAPI:Orbits</td>
+                            <td>Brunswick, Lower Saxony, Germany</td>
+                            <td>LinkedIn</td>
+                            <td class="score-cell score-med">
+                                48.7%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Berlin">
+                            <td>64</td>
+                            <td><a href="https://de.indeed.com/rc/clk?jk=1a06f6d26a834d99&bb=41XBNgjC_LTp_uPsPC-JdC4nSZJ87AadLvxm1Ln81NKdnCf-Nfz7LoneP8o3E3iiFlFi2qkLnAf-D9rnrxwM9QwEb1gYxjY6QSumDN_fA4skqW4t0YFaXP3oiSvZB-vyk8utet9JZ7KyG5fTa8T85RGRpz-5k18VZgtsRyRWH3k%3D&xkcb=SoB867M3me4s15TNzp0PbzkdCdPP&fccid=963f2edbf71c4b4d&vjs=3" target="_blank">WERKSTUDENT CLOUD SECURITY (M/W/D) – DEVSECOPS & AUTOMATION</a></td>
+                            <td>Spike Reply</td>
+                            <td>Berlin</td>
+                            <td>Indeed</td>
+                            <td class="score-cell score-med">
+                                47.9%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Berlin">
+                            <td>65</td>
+                            <td><a href="https://de.indeed.com/rc/clk?jk=a0488a41615b5f63&bb=41XBNgjC_LTp_uPsPC-JdLh0bXtkbyslWyLGmJnfWFG5S5BObeSzKzh4Q6Tfr-ZPLDtZyOtndT-PY4KR0QH64eKU6CdEBLU9wQXrs_DNu8_4tu4xBD-WyCsbLRCMZtFQKLM9ZSuIUC19RQHDgi0MMlHtSjzTAj8Y0K_NAoB4zEI%3D&xkcb=SoCV67M3me4s15TNzp0AbzkdCdPP&fccid=963f2edbf71c4b4d&vjs=3" target="_blank">WERKSTUDENT (M/W/D) AI AGENT DEVELOPMENT</a></td>
+                            <td>Ki Reply</td>
+                            <td>Berlin</td>
+                            <td>Indeed</td>
+                            <td class="score-cell score-med">
+                                47.7%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Berlin">
+                            <td>66</td>
+                            <td><a href="https://www.arbeitnow.com/jobs/companies/tripleten/remote-head-of-student-experience-berlin-186091" target="_blank">Head of Student Experience</a></td>
+                            <td>TripleTen</td>
+                            <td>Berlin</td>
+                            <td>Arbeitnow</td>
+                            <td class="score-cell score-med">
+                                47.7%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                <span class="tag">data science</span>
+                                
+                                
+                                
+                                <span class="tag tag-missing">scala</span>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Gifhorn, Lower Saxony, Germany">
+                            <td>67</td>
+                            <td><a href="https://de.linkedin.com/jobs/view/master-s-thesis-methods-for-acoustic-event-detection-at-iav-gmbh-4359786633?position=5&pageNum=0&refId=iBA%2FozyD3Fdc95siz772Xw%3D%3D&trackingId=0i5uY2SVW%2B7Ir7jdy10hxA%3D%3D" target="_blank">Master's Thesis - Methods for Acoustic Event Detection</a></td>
+                            <td>IAV GmbH</td>
+                            <td>Gifhorn, Lower Saxony, Germany</td>
+                            <td>LinkedIn</td>
+                            <td class="score-cell score-med">
+                                47.3%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Berlin">
+                            <td>68</td>
+                            <td><a href="https://www.arbeitnow.com/jobs/companies/42-wolfsburg-berlin/student-assistant-social-media-content-creator-berlin-150948" target="_blank">Mini Job - Social Media Content Creator</a></td>
+                            <td>42 Wolfsburg / Berlin</td>
+                            <td>Berlin</td>
+                            <td>Arbeitnow</td>
+                            <td class="score-cell score-med">
+                                45.2%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                <span class="tag">git</span>
+                                
+                                
+                                
+                                <span class="tag tag-missing">r</span>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Berlin">
+                            <td>69</td>
+                            <td><a href="https://de.linkedin.com/jobs/view/working-student-software-data-engineering-e-health-x-d-w-m-at-doc-cirrus-4351284813?position=1&pageNum=0&refId=8EIu7c6D%2BXQOl2G6Wu25nQ%3D%3D&trackingId=7rovas%2BCJ%2FU4kD028WsRSw%3D%3D" target="_blank"></a></td>
+                            <td></td>
+                            <td>Berlin</td>
+                            <td>LinkedIn</td>
+                            <td class="score-cell score-med">
+                                45.0%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Berlin">
+                            <td>70</td>
+                            <td><a href="https://de.linkedin.com/jobs/view/werkstudent-data-engineering-process-automation-m-w-d-at-melag-medizintechnik-4371967936?position=2&pageNum=0&refId=8EIu7c6D%2BXQOl2G6Wu25nQ%3D%3D&trackingId=t1BmDrxlL1vwi2d%2BzzR5OA%3D%3D" target="_blank"></a></td>
+                            <td></td>
+                            <td>Berlin</td>
+                            <td>LinkedIn</td>
+                            <td class="score-cell score-med">
+                                45.0%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Berlin">
+                            <td>71</td>
+                            <td><a href="https://de.linkedin.com/jobs/view/werkstudent-ai-research-data-evaluation-at-lilt-ai-4364474372?position=3&pageNum=0&refId=8EIu7c6D%2BXQOl2G6Wu25nQ%3D%3D&trackingId=oLsOK6Tmj%2BXYI8zIifqRKQ%3D%3D" target="_blank"></a></td>
+                            <td></td>
+                            <td>Berlin</td>
+                            <td>LinkedIn</td>
+                            <td class="score-cell score-med">
+                                45.0%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Berlin">
+                            <td>72</td>
+                            <td><a href="https://de.linkedin.com/jobs/view/working-student-pre-sales-support-specialist-m-w-d-at-caresyntax-4366121190?position=4&pageNum=0&refId=8EIu7c6D%2BXQOl2G6Wu25nQ%3D%3D&trackingId=q2dQCSBviQUa6Pzw%2BUu7Iw%3D%3D" target="_blank"></a></td>
+                            <td></td>
+                            <td>Berlin</td>
+                            <td>LinkedIn</td>
+                            <td class="score-cell score-med">
+                                45.0%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Berlin">
+                            <td>73</td>
+                            <td><a href="https://de.linkedin.com/jobs/view/werkstudent-in-learning-content-product-all-genders-at-stackfuel-4378942352?position=5&pageNum=0&refId=8EIu7c6D%2BXQOl2G6Wu25nQ%3D%3D&trackingId=BfL2av9SL1mb%2BGDXCHi4zA%3D%3D" target="_blank"></a></td>
+                            <td></td>
+                            <td>Berlin</td>
+                            <td>LinkedIn</td>
+                            <td class="score-cell score-med">
+                                45.0%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Berlin">
+                            <td>74</td>
+                            <td><a href="https://de.linkedin.com/jobs/view/praktikant-werkstudent-cloud-transformation-w-m-d-at-pwc-deutschland-4370239308?position=6&pageNum=0&refId=8EIu7c6D%2BXQOl2G6Wu25nQ%3D%3D&trackingId=MGhEFrqN7tuLK7RnxYCvnA%3D%3D" target="_blank"></a></td>
+                            <td></td>
+                            <td>Berlin</td>
+                            <td>LinkedIn</td>
+                            <td class="score-cell score-med">
+                                45.0%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Berlin">
+                            <td>75</td>
+                            <td><a href="https://de.linkedin.com/jobs/view/working-student-f-m-d-software-development-for-strategic-innovation-projects-at-sap-4379448768?position=1&pageNum=0&refId=BLDZaRIXguQXioolKhhITA%3D%3D&trackingId=jappkdpzycEGrzlrBUk5yQ%3D%3D" target="_blank"></a></td>
+                            <td></td>
+                            <td>Berlin</td>
+                            <td>LinkedIn</td>
+                            <td class="score-cell score-med">
+                                45.0%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Berlin">
+                            <td>76</td>
+                            <td><a href="https://de.linkedin.com/jobs/view/product-engineering-intern-w-m-d-at-enpal-4368969860?position=2&pageNum=0&refId=BLDZaRIXguQXioolKhhITA%3D%3D&trackingId=mZrQLtcXASdJTFG%2B6qnPWQ%3D%3D" target="_blank"></a></td>
+                            <td></td>
+                            <td>Berlin</td>
+                            <td>LinkedIn</td>
+                            <td class="score-cell score-med">
+                                45.0%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Berlin">
+                            <td>77</td>
+                            <td><a href="https://de.linkedin.com/jobs/view/werkstudent-programmierer-firmware-embedded-m-w-d-at-andres-industries-ag-4361876965?position=3&pageNum=0&refId=BLDZaRIXguQXioolKhhITA%3D%3D&trackingId=bttjsDL7ydlH%2FIeSEfeciQ%3D%3D" target="_blank"></a></td>
+                            <td></td>
+                            <td>Berlin</td>
+                            <td>LinkedIn</td>
+                            <td class="score-cell score-med">
+                                45.0%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Berlin">
+                            <td>78</td>
+                            <td><a href="https://de.linkedin.com/jobs/view/werkstudent-softwareentwicklung-und-ki-m-w-d-at-coac-gmbh-4058325204?position=4&pageNum=0&refId=BLDZaRIXguQXioolKhhITA%3D%3D&trackingId=E0FE%2BiFV5Gd8eWskiBPX5Q%3D%3D" target="_blank"></a></td>
+                            <td></td>
+                            <td>Berlin</td>
+                            <td>LinkedIn</td>
+                            <td class="score-cell score-med">
+                                45.0%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Berlin">
+                            <td>79</td>
+                            <td><a href="https://de.linkedin.com/jobs/view/working-student-software-data-engineering-e-health-x-d-w-m-at-doc-cirrus-4351284813?position=5&pageNum=0&refId=BLDZaRIXguQXioolKhhITA%3D%3D&trackingId=11xTb3lottyR7OaCoXlHWA%3D%3D" target="_blank"></a></td>
+                            <td></td>
+                            <td>Berlin</td>
+                            <td>LinkedIn</td>
+                            <td class="score-cell score-med">
+                                45.0%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Berlin">
+                            <td>80</td>
+                            <td><a href="https://de.linkedin.com/jobs/view/werkstudent-in-m-w-d-im-bereich-der-softwareentwicklung-at-ebp-deutschland-gmbh-4336141226?position=6&pageNum=0&refId=BLDZaRIXguQXioolKhhITA%3D%3D&trackingId=J4GyRZ794mTI3oCiPtXmKQ%3D%3D" target="_blank"></a></td>
+                            <td></td>
+                            <td>Berlin</td>
+                            <td>LinkedIn</td>
+                            <td class="score-cell score-med">
+                                45.0%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Berlin">
+                            <td>81</td>
+                            <td><a href="https://de.linkedin.com/jobs/view/werkstudent-frontend-development-cro-w-m-d-at-peaks-pies-gmbh-4189914005?position=7&pageNum=0&refId=BLDZaRIXguQXioolKhhITA%3D%3D&trackingId=wyPNgGKVpOO%2BAd3%2FcKo%2FXg%3D%3D" target="_blank"></a></td>
+                            <td></td>
+                            <td>Berlin</td>
+                            <td>LinkedIn</td>
+                            <td class="score-cell score-med">
+                                45.0%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Berlin">
+                            <td>82</td>
+                            <td><a href="https://de.linkedin.com/jobs/view/business-engineering-intern-w-m-d-at-enpal-4368980671?position=8&pageNum=0&refId=BLDZaRIXguQXioolKhhITA%3D%3D&trackingId=phDPy%2FtZQO2YnICrMs9WPw%3D%3D" target="_blank"></a></td>
+                            <td></td>
+                            <td>Berlin</td>
+                            <td>LinkedIn</td>
+                            <td class="score-cell score-med">
+                                45.0%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Berlin">
+                            <td>83</td>
+                            <td><a href="https://de.linkedin.com/jobs/view/werkstudent-java-entwicklung-m-w-d-at-sopra-steria-4378019038?position=9&pageNum=0&refId=BLDZaRIXguQXioolKhhITA%3D%3D&trackingId=yemJXvvglOBBgR4zhX%2By7A%3D%3D" target="_blank"></a></td>
+                            <td></td>
+                            <td>Berlin</td>
+                            <td>LinkedIn</td>
+                            <td class="score-cell score-med">
+                                45.0%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Berlin">
+                            <td>84</td>
+                            <td><a href="https://de.linkedin.com/jobs/view/werkstudent-data-engineering-process-automation-m-w-d-at-melag-medizintechnik-4371967936?position=10&pageNum=0&refId=BLDZaRIXguQXioolKhhITA%3D%3D&trackingId=%2FipXAJ%2F1gJIif6NxjZXTdg%3D%3D" target="_blank"></a></td>
+                            <td></td>
+                            <td>Berlin</td>
+                            <td>LinkedIn</td>
+                            <td class="score-cell score-med">
+                                45.0%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Berlin">
+                            <td>85</td>
+                            <td><a href="https://de.linkedin.com/jobs/view/werkstudent-softwareentwicklung-m-w-d-at-otis-elevator-co-4369108258?position=11&pageNum=0&refId=BLDZaRIXguQXioolKhhITA%3D%3D&trackingId=TYwjfeLdA9en%2BEjPzI8VBg%3D%3D" target="_blank"></a></td>
+                            <td></td>
+                            <td>Berlin</td>
+                            <td>LinkedIn</td>
+                            <td class="score-cell score-med">
+                                45.0%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Berlin">
+                            <td>86</td>
+                            <td><a href="https://de.linkedin.com/jobs/view/werkstudent-webentwicklung-m-w-d-at-sopra-steria-custom-software-solutions-4369611250?position=12&pageNum=0&refId=BLDZaRIXguQXioolKhhITA%3D%3D&trackingId=oiGD0MQ9%2BUvH66EwNCYGKA%3D%3D" target="_blank"></a></td>
+                            <td></td>
+                            <td>Berlin</td>
+                            <td>LinkedIn</td>
+                            <td class="score-cell score-med">
+                                45.0%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Berlin">
+                            <td>87</td>
+                            <td><a href="https://de.linkedin.com/jobs/view/praktikum-werkstudent-developer-w-m-d-at-pwc-deutschland-4374367539?position=13&pageNum=0&refId=BLDZaRIXguQXioolKhhITA%3D%3D&trackingId=z56hBjnf3N%2FiUIHIbnGvvw%3D%3D" target="_blank"></a></td>
+                            <td></td>
+                            <td>Berlin</td>
+                            <td>LinkedIn</td>
+                            <td class="score-cell score-med">
+                                45.0%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Berlin">
+                            <td>88</td>
+                            <td><a href="https://de.linkedin.com/jobs/view/werkstudent-industrial-ai-internal-cloud-development-m-w-d-at-melag-medizintechnik-4371982173?position=14&pageNum=0&refId=BLDZaRIXguQXioolKhhITA%3D%3D&trackingId=8RdvLK3vSRCVcAmO5qrp1g%3D%3D" target="_blank"></a></td>
+                            <td></td>
+                            <td>Berlin</td>
+                            <td>LinkedIn</td>
+                            <td class="score-cell score-med">
+                                45.0%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Berlin">
+                            <td>89</td>
+                            <td><a href="https://de.linkedin.com/jobs/view/werkstudent-in-m-w-d-f%C3%BCr-digitalisierung-automatisierung-at-strabag-rail-gmbh-4369299375?position=15&pageNum=0&refId=BLDZaRIXguQXioolKhhITA%3D%3D&trackingId=40VEsLjqO%2BkNYNrFdCpVGw%3D%3D" target="_blank"></a></td>
+                            <td></td>
+                            <td>Berlin</td>
+                            <td>LinkedIn</td>
+                            <td class="score-cell score-med">
+                                45.0%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Berlin">
+                            <td>90</td>
+                            <td><a href="https://de.linkedin.com/jobs/view/werkstudent-im-bereich-engineering-softwarebibliotheken-m-w-d-at-ge-vernova-4371884379?position=16&pageNum=0&refId=BLDZaRIXguQXioolKhhITA%3D%3D&trackingId=v8htJ9aq%2FfR8Y15tpBrBaw%3D%3D" target="_blank"></a></td>
+                            <td></td>
+                            <td>Berlin</td>
+                            <td>LinkedIn</td>
+                            <td class="score-cell score-med">
+                                45.0%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Berlin">
+                            <td>91</td>
+                            <td><a href="https://de.linkedin.com/jobs/view/associate-digital-product-ai-m-w-d-at-tawo-4363194548?position=17&pageNum=0&refId=BLDZaRIXguQXioolKhhITA%3D%3D&trackingId=c18nlzRgjK4ODRuFfox1oQ%3D%3D" target="_blank"></a></td>
+                            <td></td>
+                            <td>Berlin</td>
+                            <td>LinkedIn</td>
+                            <td class="score-cell score-med">
+                                45.0%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Berlin">
+                            <td>92</td>
+                            <td><a href="https://de.linkedin.com/jobs/view/werkstudent-zur-unterst%C3%BCtzung-der-it-d-m-w-at-atmosfair-ggmbh-4353704491?position=18&pageNum=0&refId=BLDZaRIXguQXioolKhhITA%3D%3D&trackingId=Si6SLiqy6gWmOeEqZ%2Fl3Mg%3D%3D" target="_blank"></a></td>
+                            <td></td>
+                            <td>Berlin</td>
+                            <td>LinkedIn</td>
+                            <td class="score-cell score-med">
+                                45.0%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Berlin">
+                            <td>93</td>
+                            <td><a href="https://de.linkedin.com/jobs/view/praktikum-werkstudent-m-w-d-ki-projekt-at-finetech-4375290621?position=19&pageNum=0&refId=BLDZaRIXguQXioolKhhITA%3D%3D&trackingId=MKOQALS4t0pd174Ppre4Vw%3D%3D" target="_blank"></a></td>
+                            <td></td>
+                            <td>Berlin</td>
+                            <td>LinkedIn</td>
+                            <td class="score-cell score-med">
+                                45.0%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Berlin">
+                            <td>94</td>
+                            <td><a href="https://de.linkedin.com/jobs/view/werkstudent-m-w-d-bim-entwicklung-at-ssf-ingenieure-ag-4299789288?position=20&pageNum=0&refId=BLDZaRIXguQXioolKhhITA%3D%3D&trackingId=aGMEiZ6Yn8huZagXPEk0Wg%3D%3D" target="_blank"></a></td>
+                            <td></td>
+                            <td>Berlin</td>
+                            <td>LinkedIn</td>
+                            <td class="score-cell score-med">
+                                45.0%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Berlin">
+                            <td>95</td>
+                            <td><a href="https://de.linkedin.com/jobs/view/werkstudent-it-softwareentwicklung-w-m-d-at-kpmg-it-service-gmbh-4303714945?position=21&pageNum=0&refId=BLDZaRIXguQXioolKhhITA%3D%3D&trackingId=gfcC8SV%2FyjhneG5cWVEIaw%3D%3D" target="_blank"></a></td>
+                            <td></td>
+                            <td>Berlin</td>
+                            <td>LinkedIn</td>
+                            <td class="score-cell score-med">
+                                45.0%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Berlin">
+                            <td>96</td>
+                            <td><a href="https://de.linkedin.com/jobs/view/werkstudent-ai-research-data-evaluation-at-lilt-ai-4364474372?position=22&pageNum=0&refId=BLDZaRIXguQXioolKhhITA%3D%3D&trackingId=zQ7%2FSYKixPXmBpBh3YFDOw%3D%3D" target="_blank"></a></td>
+                            <td></td>
+                            <td>Berlin</td>
+                            <td>LinkedIn</td>
+                            <td class="score-cell score-med">
+                                45.0%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Berlin">
+                            <td>97</td>
+                            <td><a href="https://de.linkedin.com/jobs/view/werkstudent-testautomatisierung-m-w-d-at-karl-storz-4368627567?position=23&pageNum=0&refId=BLDZaRIXguQXioolKhhITA%3D%3D&trackingId=K9J5EEXvgYlJPQQbStWNzQ%3D%3D" target="_blank"></a></td>
+                            <td></td>
+                            <td>Berlin</td>
+                            <td>LinkedIn</td>
+                            <td class="score-cell score-med">
+                                45.0%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Berlin">
+                            <td>98</td>
+                            <td><a href="https://de.linkedin.com/jobs/view/werkstudent-als-ki-experte-und-workflow-automatisierer-m-w-x-at-cirrus-real-estate-gmbh-4375991717?position=24&pageNum=0&refId=BLDZaRIXguQXioolKhhITA%3D%3D&trackingId=Q98bxg0vJxOuRTUHSWD46A%3D%3D" target="_blank"></a></td>
+                            <td></td>
+                            <td>Berlin</td>
+                            <td>LinkedIn</td>
+                            <td class="score-cell score-med">
+                                45.0%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Berlin">
+                            <td>99</td>
+                            <td><a href="https://de.linkedin.com/jobs/view/werkstudent-%E2%80%93-smart-city-iot-m-w-d-at-stadtwerke-potsdam-gmbh-4364588856?position=25&pageNum=0&refId=BLDZaRIXguQXioolKhhITA%3D%3D&trackingId=dqxALawvQXYo2G9tbYClSw%3D%3D" target="_blank"></a></td>
+                            <td></td>
+                            <td>Berlin</td>
+                            <td>LinkedIn</td>
+                            <td class="score-cell score-med">
+                                45.0%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Berlin">
+                            <td>100</td>
+                            <td><a href="https://de.linkedin.com/jobs/view/werkstudent-%E2%80%93-smart-city-iot-m-w-d-at-stadtwerke-potsdam-gmbh-4364746551?position=26&pageNum=0&refId=BLDZaRIXguQXioolKhhITA%3D%3D&trackingId=q3t%2FJq471fHXXhYtIs2YSA%3D%3D" target="_blank"></a></td>
+                            <td></td>
+                            <td>Berlin</td>
+                            <td>LinkedIn</td>
+                            <td class="score-cell score-med">
+                                45.0%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Berlin">
+                            <td>101</td>
+                            <td><a href="https://de.linkedin.com/jobs/view/no-code-ai-werkstudent-m-w-d-at-yoursquares-gmbh-4377948462?position=27&pageNum=0&refId=BLDZaRIXguQXioolKhhITA%3D%3D&trackingId=Lmy9myZF1%2FaFB0dyaclXCg%3D%3D" target="_blank"></a></td>
+                            <td></td>
+                            <td>Berlin</td>
+                            <td>LinkedIn</td>
+                            <td class="score-cell score-med">
+                                45.0%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Berlin">
+                            <td>102</td>
+                            <td><a href="https://de.linkedin.com/jobs/view/werkstudent-in-energiemanagement-innovation-m-w-d-at-green-fusion-4374894057?position=28&pageNum=0&refId=BLDZaRIXguQXioolKhhITA%3D%3D&trackingId=F3Wpg71wMO5g3i%2FloOiReA%3D%3D" target="_blank"></a></td>
+                            <td></td>
+                            <td>Berlin</td>
+                            <td>LinkedIn</td>
+                            <td class="score-cell score-med">
+                                45.0%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Berlin">
+                            <td>103</td>
+                            <td><a href="https://de.linkedin.com/jobs/view/werkstudent-in-m-w-d-f%C3%BCr-digitalisierung-automatisierung-at-strabag-4368686988?position=29&pageNum=0&refId=BLDZaRIXguQXioolKhhITA%3D%3D&trackingId=CD%2FSe6qlQLztYoUm9y5QQQ%3D%3D" target="_blank"></a></td>
+                            <td></td>
+                            <td>Berlin</td>
+                            <td>LinkedIn</td>
+                            <td class="score-cell score-med">
+                                45.0%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Berlin">
+                            <td>104</td>
+                            <td><a href="https://de.linkedin.com/jobs/view/werkstudent-contenttech-m-w-d-at-vgl-publishing-ag-4337007446?position=30&pageNum=0&refId=BLDZaRIXguQXioolKhhITA%3D%3D&trackingId=r8z5JPXsvg7WhPmAudg%2F1w%3D%3D" target="_blank"></a></td>
+                            <td></td>
+                            <td>Berlin</td>
+                            <td>LinkedIn</td>
+                            <td class="score-cell score-med">
+                                45.0%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Wolfsburg">
+                            <td>105</td>
+                            <td><a href="https://de.linkedin.com/jobs/view/working-student-networking-technologies-m-w-d-at-cariad-4377743937?position=1&pageNum=0&refId=tqcx6eZa88mQ%2B6s3%2B%2B0lEg%3D%3D&trackingId=2gm7OzzIgfXPGLENls2xIA%3D%3D" target="_blank"></a></td>
+                            <td></td>
+                            <td>Wolfsburg</td>
+                            <td>LinkedIn</td>
+                            <td class="score-cell score-med">
+                                45.0%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Wolfsburg">
+                            <td>106</td>
+                            <td><a href="https://de.linkedin.com/jobs/view/werkstudent-m-w-d-produktteam-prozessautomatisierung-markt-d-at-volkswagen-financial-services-4380938992?position=2&pageNum=0&refId=tqcx6eZa88mQ%2B6s3%2B%2B0lEg%3D%3D&trackingId=VTFLuDfBR2Z3xtGUDUZ%2BdA%3D%3D" target="_blank"></a></td>
+                            <td></td>
+                            <td>Wolfsburg</td>
+                            <td>LinkedIn</td>
+                            <td class="score-cell score-med">
+                                45.0%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Wolfsburg">
+                            <td>107</td>
+                            <td><a href="https://de.linkedin.com/jobs/view/thesis-digitization-and-automation-of-industrial-workflows-with-low-code-at-iav-gmbh-4370517560?position=1&pageNum=0&refId=iBA%2FozyD3Fdc95siz772Xw%3D%3D&trackingId=0IYtJliFD6fQIweoWwsJNQ%3D%3D" target="_blank"></a></td>
+                            <td></td>
+                            <td>Wolfsburg</td>
+                            <td>LinkedIn</td>
+                            <td class="score-cell score-med">
+                                45.0%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Wolfsburg">
+                            <td>108</td>
+                            <td><a href="https://de.linkedin.com/jobs/view/thesis-%E2%80%93-digitization-and-automation-of-industrial-workflows-with-low-code-at-iav-vehicle-safety-4370398664?position=2&pageNum=0&refId=iBA%2FozyD3Fdc95siz772Xw%3D%3D&trackingId=alz1VtDrkHEmQakduUFt%2FQ%3D%3D" target="_blank"></a></td>
+                            <td></td>
+                            <td>Wolfsburg</td>
+                            <td>LinkedIn</td>
+                            <td class="score-cell score-med">
+                                45.0%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Wolfsburg">
+                            <td>109</td>
+                            <td><a href="https://de.linkedin.com/jobs/view/thesis-%E2%80%93-digitization-and-automation-of-industrial-workflows-with-low-code-at-iav-gmbh-4370546384?position=3&pageNum=0&refId=iBA%2FozyD3Fdc95siz772Xw%3D%3D&trackingId=BasXE8Wjd9eOuzTEXwdtLA%3D%3D" target="_blank"></a></td>
+                            <td></td>
+                            <td>Wolfsburg</td>
+                            <td>LinkedIn</td>
+                            <td class="score-cell score-med">
+                                45.0%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Leipzig">
+                            <td>110</td>
+                            <td><a href="https://de.linkedin.com/jobs/view/werkstudent-in-e-commerce-all-genders-at-adesso-se-4236584788?position=1&pageNum=0&refId=QPOUJRLjGuzPjbZzboM9cA%3D%3D&trackingId=V%2Fi1oiXjGu4hOg85d1E0Sw%3D%3D" target="_blank"></a></td>
+                            <td></td>
+                            <td>Leipzig</td>
+                            <td>LinkedIn</td>
+                            <td class="score-cell score-med">
+                                45.0%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Leipzig">
+                            <td>111</td>
+                            <td><a href="https://de.linkedin.com/jobs/view/werkstudent-in-praktikant-in-abschlussarbeit-entwicklung-bereich-dms-ecm-m-w-d-at-gisa-gmbh-4366407418?position=2&pageNum=0&refId=QPOUJRLjGuzPjbZzboM9cA%3D%3D&trackingId=wVgLLT%2FKbhvHpMDRA9cjYA%3D%3D" target="_blank"></a></td>
+                            <td></td>
+                            <td>Leipzig</td>
+                            <td>LinkedIn</td>
+                            <td class="score-cell score-med">
+                                45.0%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Leipzig">
+                            <td>112</td>
+                            <td><a href="https://de.linkedin.com/jobs/view/werkstudent-in-devops-automation-forward-deployed-engineer-m-w-d-leipzig-at-xalt-4376654887?position=3&pageNum=0&refId=QPOUJRLjGuzPjbZzboM9cA%3D%3D&trackingId=vyrgp2VFhTDLRqHhZoLMKQ%3D%3D" target="_blank"></a></td>
+                            <td></td>
+                            <td>Leipzig</td>
+                            <td>LinkedIn</td>
+                            <td class="score-cell score-med">
+                                45.0%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Leipzig">
+                            <td>113</td>
+                            <td><a href="https://de.linkedin.com/jobs/view/werkstudent-digitalisierung-m-w-d-at-freitag-gruppe-4360562733?position=4&pageNum=0&refId=QPOUJRLjGuzPjbZzboM9cA%3D%3D&trackingId=H8%2BssBpGloehEIIHwv5Dlw%3D%3D" target="_blank"></a></td>
+                            <td></td>
+                            <td>Leipzig</td>
+                            <td>LinkedIn</td>
+                            <td class="score-cell score-med">
+                                45.0%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Leipzig">
+                            <td>114</td>
+                            <td><a href="https://de.linkedin.com/jobs/view/werkstudent-in-firmware-porgrammierung-m-w-d-at-bruker-optics-4370544597?position=5&pageNum=0&refId=QPOUJRLjGuzPjbZzboM9cA%3D%3D&trackingId=IEaEbsXkq6jjhEkkhX6zBw%3D%3D" target="_blank"></a></td>
+                            <td></td>
+                            <td>Leipzig</td>
+                            <td>LinkedIn</td>
+                            <td class="score-cell score-med">
+                                45.0%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Berlin, Berlin, Germany">
+                            <td>115</td>
+                            <td><a href="https://www.arbeitnow.com/jobs/companies/sumup/fraud-prevention-strategy-manager-berlin-3990" target="_blank">Fraud Prevention Strategy Manager</a></td>
+                            <td>SumUp</td>
+                            <td>Berlin, Berlin, Germany</td>
+                            <td>Arbeitnow</td>
+                            <td class="score-cell score-med">
+                                44.9%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                <span class="tag">rag</span>
+                                
+                                
+                                
+                                <span class="tag tag-missing">r</span>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Berlin">
+                            <td>116</td>
+                            <td><a href="https://www.arbeitnow.com/jobs/companies/tripleten/remote-backend-developer-billing-team-berlin-185691" target="_blank">Backend Developer (Billing Team)</a></td>
+                            <td>TripleTen</td>
+                            <td>Berlin</td>
+                            <td>Arbeitnow</td>
+                            <td class="score-cell score-med">
+                                44.6%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                <span class="tag">data science</span>
+                                
+                                <span class="tag">git</span>
+                                
+                                <span class="tag">langchain</span>
+                                
+                                <span class="tag">python</span>
+                                
+                                
+                                
+                                <span class="tag tag-missing">fastapi</span>
+                                
+                                <span class="tag tag-missing">gitlab</span>
+                                
+                                <span class="tag tag-missing">kafka</span>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Wolfsburg">
+                            <td>117</td>
+                            <td><a href="https://www.arbeitnow.com/jobs/companies/42-wolfsburg-berlin/it-manager-full-time-wolfsburg-299556" target="_blank">IT Manager (Full-Time)</a></td>
+                            <td>42 Wolfsburg / Berlin</td>
+                            <td>Wolfsburg</td>
+                            <td>Arbeitnow</td>
+                            <td class="score-cell score-med">
+                                44.2%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                                <span class="warning-tag">German preferred (you have A2)</span>
+                                
+                            </td>
+                            <td>
+                                
+                                <span class="tag">git</span>
+                                
+                                <span class="tag">rag</span>
+                                
+                                
+                                
+                                <span class="tag tag-missing">rust</span>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Berlin">
+                            <td>118</td>
+                            <td><a href="https://www.arbeitnow.com/jobs/companies/paymentology/remote-cloud-engineer-berlin-399234" target="_blank">Cloud Engineer</a></td>
+                            <td>Paymentology</td>
+                            <td>Berlin</td>
+                            <td>Arbeitnow</td>
+                            <td class="score-cell score-med">
+                                43.9%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                <span class="tag">aws</span>
+                                
+                                <span class="tag">ci/cd</span>
+                                
+                                
+                                
+                                <span class="tag tag-missing">scala</span>
+                                
+                                <span class="tag tag-missing">terraform</span>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Berlin">
+                            <td>119</td>
+                            <td><a href="https://www.arbeitnow.com/jobs/companies/k-tronik-gmbh/software-developer-hmi-mmi-fur-high-power-produkte-berlin-482090" target="_blank">Software Developer HMI & MMI für High Power Produkte (m/w/x)</a></td>
+                            <td>K-tronik GmbH</td>
+                            <td>Berlin</td>
+                            <td>Arbeitnow</td>
+                            <td class="score-cell score-med">
+                                40.7%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                <span class="tag">docker</span>
+                                
+                                <span class="tag">git</span>
+                                
+                                <span class="tag">java</span>
+                                
+                                <span class="tag">linux</span>
+                                
+                                
+                                
+                                <span class="tag tag-missing">angular</span>
+                                
+                                <span class="tag tag-missing">gitlab</span>
+                                
+                                <span class="tag tag-missing">javascript</span>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Wolfsburg">
+                            <td>120</td>
+                            <td><a href="https://www.xing.com/jobs/manching-working-student-department-analytics-data-engineering-151645271" target="_blank">Working Student in department Analytics & Data Engineering (d/f/m)</a></td>
+                            <td></td>
+                            <td>Wolfsburg</td>
+                            <td>XING</td>
+                            <td class="score-cell score-med">
+                                38.6%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                                
+                                <span class="tag tag-missing">data engineering</span>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Berlin">
+                            <td>121</td>
+                            <td><a href="https://de.indeed.com/rc/clk?jk=21608dc79e271ff1&bb=41XBNgjC_LTp_uPsPC-JdEJE8QAtlbVSp0Sm-X-AQ4LQnSXT2-OeNJLT716EtuXIsWb0EIof4XBX55eQoAgtzGHyCKdontV1b-WMDq0hQdxKn2vNR9iAPsiQoQXT_gyvPeK_oh45mfkerjaMEBLGrHrRbFd-zJk2wwS_SjXrM-8%3D&xkcb=SoBV67M3me4s15TNzp0NbzkdCdPP&fccid=31e9418f41411973&vjs=3" target="_blank">Werkstudent Data Engineering & Process Automation (m/w/d)</a></td>
+                            <td>MELAG Medizintechnik GmbH & Co. KG</td>
+                            <td>Berlin</td>
+                            <td>Indeed</td>
+                            <td class="score-cell score-med">
+                                38.2%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                                
+                                <span class="tag tag-missing">data engineering</span>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Berlin">
+                            <td>122</td>
+                            <td><a href="https://www.arbeitnow.com/jobs/companies/acemateai/working-student-full-stack-developer-berlin-293141" target="_blank">Working Student - Full-Stack Developer</a></td>
+                            <td>acemate.ai</td>
+                            <td>Berlin</td>
+                            <td>Arbeitnow</td>
+                            <td class="score-cell score-med">
+                                38.1%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                                
+                                <span class="tag tag-missing">nlp</span>
+                                
+                                <span class="tag tag-missing">rust</span>
+                                
+                                <span class="tag tag-missing">typescript</span>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Wolfsburg">
+                            <td>123</td>
+                            <td><a href="https://www.xing.com/jobs/rottendorf-werkstudent-bereich-data-engineering-stellendetails-151568831" target="_blank">Werkstudent im Bereich Data Engineering (m/w/d) Stellendetails</a></td>
+                            <td></td>
+                            <td>Wolfsburg</td>
+                            <td>XING</td>
+                            <td class="score-cell score-med">
+                                37.7%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                                
+                                <span class="tag tag-missing">data engineering</span>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Berlin, Berlin, Germany">
+                            <td>124</td>
+                            <td><a href="https://www.arbeitnow.com/jobs/companies/sumup/senior-fullstack-engineer-identity-berlin-189447" target="_blank">Senior Fullstack Engineer - Identity</a></td>
+                            <td>SumUp</td>
+                            <td>Berlin, Berlin, Germany</td>
+                            <td>Arbeitnow</td>
+                            <td class="score-cell score-med">
+                                37.5%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                <span class="tag">react</span>
+                                
+                                
+                                
+                                <span class="tag tag-missing">go</span>
+                                
+                                <span class="tag tag-missing">typescript</span>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Berlin, Berlin, Germany">
+                            <td>125</td>
+                            <td><a href="https://de.linkedin.com/jobs/view/werkstudent-w-m-d-in-der-entwicklung-data-engineering-oder-im-it-consulting-at-campana-schott-4206610428?position=9&pageNum=0&refId=8EIu7c6D%2BXQOl2G6Wu25nQ%3D%3D&trackingId=GW0jhIIdvrnWexlgJxJcvA%3D%3D" target="_blank">Werkstudent (w/m/d) in der Entwicklung , Data Engineering oder im IT-Consulting</a></td>
+                            <td>Campana & Schott</td>
+                            <td>Berlin, Berlin, Germany</td>
+                            <td>LinkedIn</td>
+                            <td class="score-cell score-med">
+                                37.4%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                                
+                                <span class="tag tag-missing">data engineering</span>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Berlin">
+                            <td>126</td>
+                            <td><a href="https://www.arbeitnow.com/jobs/companies/automat-it/remote-senior-solutions-architect-berlin-410274" target="_blank">Senior Solutions Architect</a></td>
+                            <td>Automat-it</td>
+                            <td>Berlin</td>
+                            <td>Arbeitnow</td>
+                            <td class="score-cell score-med">
+                                37.4%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                <span class="tag">aws</span>
+                                
+                                
+                                
+                                <span class="tag tag-missing">kubernetes</span>
+                                
+                                <span class="tag tag-missing">scala</span>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Berlin">
+                            <td>127</td>
+                            <td><a href="https://www.arbeitnow.com/jobs/companies/acemateai/working-student-product-growth-engineer-berlin-484803" target="_blank">Working Student - Product / Growth Engineer</a></td>
+                            <td>acemate.ai</td>
+                            <td>Berlin</td>
+                            <td>Arbeitnow</td>
+                            <td class="score-cell score-med">
+                                37.1%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                                
+                                <span class="tag tag-missing">nlp</span>
+                                
+                                <span class="tag tag-missing">rust</span>
+                                
+                                <span class="tag tag-missing">typescript</span>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Berlin, Berlin, Germany">
+                            <td>128</td>
+                            <td><a href="https://www.arbeitnow.com/jobs/companies/urban-sports-club/working-student-sales-all-genders-berlin-298762" target="_blank">Working Student Sales (all genders)</a></td>
+                            <td>Urban Sports Club</td>
+                            <td>Berlin, Berlin, Germany</td>
+                            <td>Arbeitnow</td>
+                            <td class="score-cell score-med">
+                                35.0%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-medium">
+                                    Medium
+                                </span>
+                                
+                                <span class="warning-tag">Requires German C1 (you have A2 — 3 level(s) gap)</span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Berlin">
+                            <td>129</td>
+                            <td><a href="https://www.xing.com/jobs/berlin-working-student-backend-development-rust-typescript-150026780" target="_blank">Working Student Backend Development (Rust, TypeScript)</a></td>
+                            <td></td>
+                            <td>Berlin</td>
+                            <td>XING</td>
+                            <td class="score-cell score-low">
+                                34.7%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-low">
+                                    Low
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                                
+                                <span class="tag tag-missing">rust</span>
+                                
+                                <span class="tag tag-missing">typescript</span>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Berlin">
+                            <td>130</td>
+                            <td><a href="https://www.arbeitnow.com/jobs/companies/acemateai/werkstudentin-business-development-berlin-280932" target="_blank">Werkstudent:in - Business Development</a></td>
+                            <td>acemate.ai</td>
+                            <td>Berlin</td>
+                            <td>Arbeitnow</td>
+                            <td class="score-cell score-low">
+                                33.4%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-low">
+                                    Low
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                                
+                                <span class="tag tag-missing">elt</span>
+                                
+                                <span class="tag tag-missing">nlp</span>
+                                
+                                <span class="tag tag-missing">typescript</span>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Berlin">
+                            <td>131</td>
+                            <td><a href="https://www.arbeitnow.com/jobs/companies/acemateai/werkstudentin-founders-associate-business-development-berlin-328643" target="_blank">Werkstudent:in - Founder's Associate</a></td>
+                            <td>acemate.ai</td>
+                            <td>Berlin</td>
+                            <td>Arbeitnow</td>
+                            <td class="score-cell score-low">
+                                33.3%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-low">
+                                    Low
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                                
+                                <span class="tag tag-missing">elt</span>
+                                
+                                <span class="tag tag-missing">nlp</span>
+                                
+                                <span class="tag tag-missing">typescript</span>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Berlin">
+                            <td>132</td>
+                            <td><a href="https://de.indeed.com/rc/clk?jk=11d55729de63701b&bb=41XBNgjC_LTp_uPsPC-JdEdcfLWRBZQnYA8zvAvvi9YFldZrr2B6Yt-K2d08tJeZcMRm2jNs2oqsSFOeqI1-F3u55THloay_Y-1jyASGsaBJaJsnXUZzIAEfJVdmMHiN8QOH_ugNZIy9oAx2Uur2fu8i1dCnwD75PHZtKWtBTmM%3D&xkcb=SoCv67M3me4s15TNzp0GbzkdCdPP&fccid=963f2edbf71c4b4d&vjs=3" target="_blank">WERKSTUDENT FÜR AI, DATA ENGINEERING UND TOOL-ENTWICKLUNG (M/W/D)</a></td>
+                            <td>Blue Reply</td>
+                            <td>Berlin</td>
+                            <td>Indeed</td>
+                            <td class="score-cell score-low">
+                                31.2%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-low">
+                                    Low
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                                
+                                <span class="tag tag-missing">data engineering</span>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Berlin">
+                            <td>133</td>
+                            <td><a href="https://www.arbeitnow.com/jobs/companies/bbq-baumann-bildung-und-qualifizierung-gmbh/junior-recruiter-berlin-215711" target="_blank">Junior Recruiter (m/w/d)</a></td>
+                            <td>BBQ - Baumann Bildung und Qualifizierung GmbH</td>
+                            <td>Berlin</td>
+                            <td>Arbeitnow</td>
+                            <td class="score-cell score-low">
+                                29.5%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-low">
+                                    Low
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                                
+                                <span class="tag tag-missing">elt</span>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                        <tr class="" data-city="Berlin">
+                            <td>134</td>
+                            <td><a href="https://www.arbeitnow.com/jobs/companies/acemateai/senior-backend-engineer-developer-berlin-300639" target="_blank">Senior Backend Engineer / Developer</a></td>
+                            <td>acemate.ai</td>
+                            <td>Berlin</td>
+                            <td>Arbeitnow</td>
+                            <td class="score-cell score-low">
+                                22.5%
+                            </td>
+                            <td>
+                                <span class="conf-badge conf-low">
+                                    Low
+                                </span>
+                                
+                            </td>
+                            <td>
+                                
+                                
+                                
+                                <span class="tag tag-missing">rust</span>
+                                
+                                <span class="tag tag-missing">typescript</span>
+                                
+                                
+                            </td>
+                        </tr>
+                        
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- TAB 3: Skills Gap -->
+        <div id="tab-gap" class="tab-content">
+            <div class="card">
+                <h2>Skills Gap Analysis</h2>
+                <p style="color: var(--text-muted); margin-bottom: 16px;">
+                    Skills frequently requested in job postings that are not present in your CV.
+                    Adding these skills can significantly improve your match scores.
+                </p>
+
+                
+                
+                
+                
+                <div class="skills-gap-bar">
+                    <div class="gap-label">typescript</div>
+                    <div class="gap-bar-outer">
+                        <div class="gap-bar-inner" style="width: 100.0%;"></div>
+                    </div>
+                    <div class="gap-count">9 jobs</div>
+                </div>
+                
+                
+                <div class="skills-gap-bar">
+                    <div class="gap-label">rust</div>
+                    <div class="gap-bar-outer">
+                        <div class="gap-bar-inner" style="width: 56.0%;"></div>
+                    </div>
+                    <div class="gap-count">5 jobs</div>
+                </div>
+                
+                
+                <div class="skills-gap-bar">
+                    <div class="gap-label">data engineering</div>
+                    <div class="gap-bar-outer">
+                        <div class="gap-bar-inner" style="width: 56.0%;"></div>
+                    </div>
+                    <div class="gap-count">5 jobs</div>
+                </div>
+                
+                
+                <div class="skills-gap-bar">
+                    <div class="gap-label">scala</div>
+                    <div class="gap-bar-outer">
+                        <div class="gap-bar-inner" style="width: 44.0%;"></div>
+                    </div>
+                    <div class="gap-count">4 jobs</div>
+                </div>
+                
+                
+                <div class="skills-gap-bar">
+                    <div class="gap-label">elt</div>
+                    <div class="gap-bar-outer">
+                        <div class="gap-bar-inner" style="width: 44.0%;"></div>
+                    </div>
+                    <div class="gap-count">4 jobs</div>
+                </div>
+                
+                
+                <div class="skills-gap-bar">
+                    <div class="gap-label">nlp</div>
+                    <div class="gap-bar-outer">
+                        <div class="gap-bar-inner" style="width: 44.0%;"></div>
+                    </div>
+                    <div class="gap-count">4 jobs</div>
+                </div>
+                
+                
+                <div class="skills-gap-bar">
+                    <div class="gap-label">r</div>
+                    <div class="gap-bar-outer">
+                        <div class="gap-bar-inner" style="width: 33.0%;"></div>
+                    </div>
+                    <div class="gap-count">3 jobs</div>
+                </div>
+                
+                
+                <div class="skills-gap-bar">
+                    <div class="gap-label">go</div>
+                    <div class="gap-bar-outer">
+                        <div class="gap-bar-inner" style="width: 33.0%;"></div>
+                    </div>
+                    <div class="gap-count">3 jobs</div>
+                </div>
+                
+                
+                <div class="skills-gap-bar">
+                    <div class="gap-label">gitlab</div>
+                    <div class="gap-bar-outer">
+                        <div class="gap-bar-inner" style="width: 22.0%;"></div>
+                    </div>
+                    <div class="gap-count">2 jobs</div>
+                </div>
+                
+                
+                <div class="skills-gap-bar">
+                    <div class="gap-label">kubernetes</div>
+                    <div class="gap-bar-outer">
+                        <div class="gap-bar-inner" style="width: 22.0%;"></div>
+                    </div>
+                    <div class="gap-count">2 jobs</div>
+                </div>
+                
+                
+                <div class="skills-gap-bar">
+                    <div class="gap-label">tensorflow</div>
+                    <div class="gap-bar-outer">
+                        <div class="gap-bar-inner" style="width: 11.0%;"></div>
+                    </div>
+                    <div class="gap-count">1 jobs</div>
+                </div>
+                
+                
+                <div class="skills-gap-bar">
+                    <div class="gap-label">azure</div>
+                    <div class="gap-bar-outer">
+                        <div class="gap-bar-inner" style="width: 11.0%;"></div>
+                    </div>
+                    <div class="gap-count">1 jobs</div>
+                </div>
+                
+                
+                <div class="skills-gap-bar">
+                    <div class="gap-label">gcp</div>
+                    <div class="gap-bar-outer">
+                        <div class="gap-bar-inner" style="width: 11.0%;"></div>
+                    </div>
+                    <div class="gap-count">1 jobs</div>
+                </div>
+                
+                
+                <div class="skills-gap-bar">
+                    <div class="gap-label">fastapi</div>
+                    <div class="gap-bar-outer">
+                        <div class="gap-bar-inner" style="width: 11.0%;"></div>
+                    </div>
+                    <div class="gap-count">1 jobs</div>
+                </div>
+                
+                
+                <div class="skills-gap-bar">
+                    <div class="gap-label">kafka</div>
+                    <div class="gap-bar-outer">
+                        <div class="gap-bar-inner" style="width: 11.0%;"></div>
+                    </div>
+                    <div class="gap-count">1 jobs</div>
+                </div>
+                
+                
+            </div>
+
+            
+            <div class="card">
+                <h2>Your Current Skills</h2>
+                <p style="margin-bottom: 12px;">
+                    
+                    <span class="tag">flutter</span>
+                    
+                    <span class="tag">rag</span>
+                    
+                    <span class="tag">react</span>
+                    
+                    <span class="tag">llm</span>
+                    
+                    <span class="tag">sql</span>
+                    
+                    <span class="tag">lambda</span>
+                    
+                    <span class="tag">postgresql</span>
+                    
+                    <span class="tag">etl</span>
+                    
+                    <span class="tag">cloudwatch</span>
+                    
+                    <span class="tag">numpy</span>
+                    
+                    <span class="tag">git</span>
+                    
+                    <span class="tag">machine learning</span>
+                    
+                    <span class="tag">maven</span>
+                    
+                    <span class="tag">bash</span>
+                    
+                    <span class="tag">docker</span>
+                    
+                    <span class="tag">linux</span>
+                    
+                    <span class="tag">pytorch</span>
+                    
+                    <span class="tag">deep learning</span>
+                    
+                    <span class="tag">protobuf</span>
+                    
+                    <span class="tag">aws</span>
+                    
+                    <span class="tag">react.js</span>
+                    
+                    <span class="tag">hadoop</span>
+                    
+                    <span class="tag">pandas</span>
+                    
+                    <span class="tag">S3</span>
+                    
+                    <span class="tag">ci/cd</span>
+                    
+                    <span class="tag">java</span>
+                    
+                    <span class="tag">scikit-learn</span>
+                    
+                    <span class="tag">mapreduce</span>
+                    
+                    <span class="tag">spark</span>
+                    
+                    <span class="tag">langchain</span>
+                    
+                    <span class="tag">pyspark</span>
+                    
+                    <span class="tag">data science</span>
+                    
+                    <span class="tag">ec2</span>
+                    
+                    <span class="tag">hdfs</span>
+                    
+                    <span class="tag">python</span>
+                    
+                    <span class="tag">elasticsearch</span>
+                    
+                </p>
+            </div>
+            
+        </div>
+    </div>
+
+    <script>
+        function switchTab(tab) {
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('.tab').forEach(el => el.classList.remove('active'));
+            document.getElementById('tab-' + tab).classList.add('active');
+            event.target.classList.add('active');
+        }
+
+        function filterCity(btn, city) {
+            document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            const rows = document.querySelectorAll('#jobTable tbody tr');
+            rows.forEach(row => {
+                if (city === 'all' || row.dataset.city.toLowerCase().includes(city.toLowerCase())) {
+                    row.style.display = '';
+                } else {
+                    row.style.display = 'none';
+                }
+            });
+        }
+
+        function filterJobs() {
+            const q = document.getElementById('jobSearch').value.toLowerCase();
+            const rows = document.querySelectorAll('#jobTable tbody tr');
+            rows.forEach(row => {
+                const text = row.textContent.toLowerCase();
+                row.style.display = text.includes(q) ? '' : 'none';
+            });
+        }
+
+        let sortDirection = {};
+        function sortTable(col) {
+            const table = document.getElementById('jobTable');
+            const tbody = table.querySelector('tbody');
+            const rows = Array.from(tbody.querySelectorAll('tr'));
+
+            sortDirection[col] = !sortDirection[col];
+            const dir = sortDirection[col] ? 1 : -1;
+
+            rows.sort((a, b) => {
+                let valA = a.cells[col].textContent.trim();
+                let valB = b.cells[col].textContent.trim();
+
+                // Try numeric sort
+                const numA = parseFloat(valA);
+                const numB = parseFloat(valB);
+                if (!isNaN(numA) && !isNaN(numB)) {
+                    return (numA - numB) * dir;
+                }
+                return valA.localeCompare(valB) * dir;
+            });
+
+            rows.forEach(row => tbody.appendChild(row));
+        }
+    </script>
+</body>
+</html>

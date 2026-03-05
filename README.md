@@ -185,8 +185,6 @@ cp new_CV_copilot/main.pdf cvs/
 python scripts/main.py scan
 ```
 
-If you want me to (a) automatically recompile `main.tex` for you and (b) re-run the ATS checks and re-generate the report now, say "Please recompile and re-run" and I'll perform those steps.
-
 ## License
 
 MIT

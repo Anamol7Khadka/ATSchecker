@@ -193,5 +193,3 @@ MIT
 
 To launch: 
 source venv/bin/activate && python app.py 
-
-give me option to add new cities other than the cities already given... you can add dropdown menu for whatever for new cities in germany... also improve the searching feature.. 

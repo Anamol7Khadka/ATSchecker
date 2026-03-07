@@ -22,6 +22,9 @@
             <span id="jobs-indicator" class="status-badge {{ 'status-ok' if job_count > 0 else 'status-none' }}">
                 Jobs: {{ job_count }}
             </span>
+            <button class="btn btn-danger btn-sm" onclick="safeQuit()" title="Safely shut down the server and free the port">
+                &#9209; Quit
+            </button>
         </div>
     </nav>
 

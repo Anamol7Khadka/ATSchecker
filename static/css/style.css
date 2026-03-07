@@ -298,14 +298,48 @@ body {
     color: var(--text-primary);
 }
 
-.city-add input {
+.city-add-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 8px;
+}
+.city-add-row select {
     width: 200px;
-    background: var(--input-bg);
+    background: var(--bg-secondary);
     color: var(--text-primary);
     border: 1px solid var(--border);
-    border-radius: 8px;
+    border-radius: 6px;
     padding: 6px 8px;
-    margin-bottom: 8px;
+    font-size: 0.84rem;
+}
+.city-added {
+    background: rgba(63,185,80,0.08);
+    border: 1px dashed var(--accent-green);
+    padding: 2px 8px;
+    border-radius: 6px;
+}
+
+/* Quit / danger button */
+.btn-danger { background: var(--accent-red); color: #fff; border-color: var(--accent-red); }
+.btn-danger:hover { filter: brightness(1.15); }
+
+/* Live jobs panel during scrape */
+#live-jobs-container {
+    display: none;
+    background: var(--bg-card);
+    border: 1px solid var(--accent-green);
+    border-radius: var(--radius);
+    padding: 16px;
+    margin-bottom: 16px;
+}
+#live-jobs-container h4 {
+    font-size: 0.92rem;
+    margin-bottom: 10px;
+    color: var(--accent-green);
+}
+#live-jobs-container .job-table {
+    font-size: 0.8rem;
 }
 
 .small-label {

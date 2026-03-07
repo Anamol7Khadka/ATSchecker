@@ -53,6 +53,27 @@ function sortTable(tableId, colIdx) {
     rows.forEach(r => tbody.appendChild(r));
 }
 
+// ─── Add City from Dropdown ───
+function addCity() {
+    const dd = document.getElementById('city-dropdown');
+    const val = dd.value;
+    if (!val) return;
+
+    // Skip if already exists
+    const existing = Array.from(document.querySelectorAll('input[name="city"]'));
+    if (existing.some(cb => cb.value === val)) {
+        dd.value = '';
+        return;
+    }
+
+    const container = document.getElementById('city-checkboxes');
+    const label = document.createElement('label');
+    label.className = 'checkbox-inline city-added';
+    label.innerHTML = '<input type="checkbox" name="city" value="' + escHtml(val) + '" checked> ' + escHtml(val);
+    container.appendChild(label);
+    dd.value = '';
+}
+
 // ─── Compile CV ───
 function compileCv() {
     const btn = document.getElementById('btn-compile');
@@ -85,6 +106,9 @@ function compileCv() {
 }
 
 // ─── Scrape Jobs ───
+let _liveJobsInterval = null;
+let _logsInterval = null;
+
 function startScrape(useCache) {
     const btn = document.getElementById('btn-scrape');
     const statusEl = document.getElementById('scrape-status');
@@ -92,8 +116,11 @@ function startScrape(useCache) {
 
     const cityChecks = Array.from(document.querySelectorAll('input[name="city"]:checked'));
     const selectedCities = cityChecks.map(c => c.value);
-    const newCity = (document.getElementById('city-new')?.value || '').trim();
-    if (newCity) selectedCities.push(newCity);
+
+    if (!useCache && selectedCities.length === 0) {
+        alert('Please select at least one city.');
+        return;
+    }
 
     btn.disabled = true;
     btn.innerHTML = '<span class="spinner"></span> Scraping...';
@@ -106,6 +133,14 @@ function startScrape(useCache) {
         logEl.textContent = '';
     }
 
+    // Show live jobs container for fresh scrapes
+    const liveContainer = document.getElementById('live-jobs-container');
+    if (liveContainer && !useCache) {
+        liveContainer.style.display = 'block';
+        document.getElementById('live-jobs-body').innerHTML = '';
+        document.getElementById('live-job-count').textContent = '0';
+    }
+
     fetch('/api/scrape', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -116,6 +151,7 @@ function startScrape(useCache) {
             if (data.status === 'started') {
                 pollStatus('scrape');
                 pollLogs();
+                if (!useCache) pollLiveJobs();
             } else {
                 statusEl.className = 'status-msg error';
                 statusEl.textContent = data.error || 'Failed';
@@ -178,11 +214,42 @@ function pollStatus(task) {
                 const statusEl = document.getElementById(task + '-status');
                 if (!statusEl) { clearInterval(interval); return; }
 
+                // Update navbar job count live
+                const jobsInd = document.getElementById('jobs-indicator');
+                if (jobsInd && data.job_count !== undefined) {
+                    jobsInd.textContent = 'Jobs: ' + data.job_count;
+                    jobsInd.className = 'status-badge ' + (data.job_count > 0 ? 'status-ok' : 'status-none');
+                }
+
                 if (info && !info.running) {
                     clearInterval(interval);
+                    if (_logsInterval) { clearInterval(_logsInterval); _logsInterval = null; }
                     statusEl.className = 'status-msg success';
                     statusEl.textContent = info.message;
-                    setTimeout(() => location.reload(), 1500);
+
+                    // Do one final live-jobs fetch, then stop polling
+                    if (_liveJobsInterval) {
+                        clearInterval(_liveJobsInterval);
+                        _liveJobsInterval = null;
+                        // Final fetch to grab any remaining jobs
+                        fetch('/api/jobs').then(r => r.json()).then(d => {
+                            _renderLiveBatch(d.jobs, true);
+                            // Show a refresh link instead of auto-reloading
+                            var note = document.getElementById('live-done-note');
+                            if (!note) {
+                                note = document.createElement('div');
+                                note.id = 'live-done-note';
+                                note.style.cssText = 'margin-top:10px;text-align:center;';
+                                var container = document.getElementById('live-jobs-container');
+                                if (container) container.appendChild(note);
+                            }
+                            note.innerHTML = '<span style="color:var(--accent-green);font-weight:600;">Scraping complete — ' + d.total + ' jobs found.</span> ' +
+                                '<button class="btn btn-sm btn-primary" onclick="location.reload()" style="margin-left:10px;">Refresh for match scores</button>';
+                        }).catch(() => {});
+                    } else {
+                        // Compile or cache-load — safe to reload
+                        setTimeout(() => location.reload(), 1500);
+                    }
                 } else if (info) {
                     statusEl.textContent = info.message;
                 }
@@ -209,12 +276,85 @@ function pollLogs() {
             .catch(() => {});
     };
 
-    const handle = setInterval(() => {
-        render();
-    }, 2000);
-
-    // Render immediately
     render();
-    // Stop polling after 5 minutes to avoid runaway timers
-    setTimeout(() => clearInterval(handle), 5 * 60 * 1000);
+    _logsInterval = setInterval(render, 2000);
+    setTimeout(() => { if (_logsInterval) clearInterval(_logsInterval); }, 10 * 60 * 1000);
+}
+
+// ─── Render a batch of jobs into the live table ───
+var _liveRenderedCount = 0;
+
+function _renderLiveBatch(jobs, fullReplace) {
+    var tbody = document.getElementById('live-jobs-body');
+    var countEl = document.getElementById('live-job-count');
+    if (!tbody || !countEl) return;
+
+    if (fullReplace || jobs.length < _liveRenderedCount) {
+        // Server re-sorted or deduped — full redraw
+        tbody.innerHTML = '';
+        _liveRenderedCount = 0;
+    }
+
+    for (var i = _liveRenderedCount; i < jobs.length; i++) {
+        var j = jobs[i];
+        var badges = '<span class="badge badge-source">' + escHtml(j.source) + '</span>';
+        if (j.recent) badges += ' <span class="badge badge-new">NEW</span>';
+        var matchCell = j.match > 0
+            ? '<span style="color:var(--accent-green);font-weight:600;">' + j.match + '%</span>'
+            : '<span style="color:var(--text-muted);">—</span>';
+        var tr = document.createElement('tr');
+        tr.innerHTML =
+            '<td>' + (i + 1) + '</td>' +
+            '<td><a href="/job/' + escHtml(j.id) + '" class="job-title-link">' + escHtml(j.title) + '</a></td>' +
+            '<td>' + escHtml(j.company) + '</td>' +
+            '<td>' + escHtml(j.location) + '</td>' +
+            '<td>' + badges + '</td>' +
+            '<td>' + matchCell + '</td>' +
+            '<td style="font-size:0.78rem;">' + escHtml(j.posted_date) + '</td>';
+        tbody.appendChild(tr);
+    }
+    _liveRenderedCount = jobs.length;
+    countEl.textContent = jobs.length;
+}
+
+// ─── Poll Live Jobs (real-time updates during scrape) ───
+function pollLiveJobs() {
+    var container = document.getElementById('live-jobs-container');
+    if (!container) return;
+    _liveRenderedCount = 0;
+
+    var render = function () {
+        fetch('/api/jobs')
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                _renderLiveBatch(data.jobs, false);
+            })
+            .catch(function () {});
+    };
+
+    render();
+    _liveJobsInterval = setInterval(render, 2000);
+}
+
+// ─── HTML-escape helper ───
+function escHtml(str) {
+    const d = document.createElement('div');
+    d.textContent = str || '';
+    return d.innerHTML;
+}
+
+// ─── Safe Quit ───
+function safeQuit() {
+    if (!confirm('Shut down the server? You will need to restart it to use the dashboard again.')) return;
+    fetch('/api/shutdown', { method: 'POST' })
+        .then(r => r.json())
+        .then(() => {
+            document.body.innerHTML = '<div style="text-align:center;padding:60px;color:#aaa;font-family:sans-serif;">' +
+                '<h1>Server stopped</h1><p>The port has been freed. You can close this tab.</p>' +
+                '<p style="margin-top:20px;font-size:0.85rem;color:#888;">To restart: <code>cd ATSchecker &amp;&amp; source venv/bin/activate &amp;&amp; python app.py</code></p></div>';
+        })
+        .catch(() => {
+            document.body.innerHTML = '<div style="text-align:center;padding:60px;color:#aaa;font-family:sans-serif;">' +
+                '<h1>Server stopped</h1><p>You can close this tab.</p></div>';
+        });
 }

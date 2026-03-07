@@ -16,7 +16,7 @@
     </div>
     <div class="action-group">
         <h3>&#128269; Job Search</h3>
-        <label class="small-label">Locations (select multiple)</label>
+        <label class="small-label">Locations (tick to include)</label>
         <div class="city-checkboxes" id="city-checkboxes">
             {% for city in config.get('cities', []) %}
             <label class="checkbox-inline">
@@ -24,8 +24,54 @@
             </label>
             {% endfor %}
         </div>
-        <div class="city-add">
-            <input type="text" id="city-new" placeholder="Add city (e.g., Magdeburg)">
+        <div class="city-add-row">
+            <select id="city-dropdown">
+                <option value="">+ Add German city...</option>
+                <option value="Aachen">Aachen</option>
+                <option value="Augsburg">Augsburg</option>
+                <option value="Bielefeld">Bielefeld</option>
+                <option value="Bochum">Bochum</option>
+                <option value="Bonn">Bonn</option>
+                <option value="Braunschweig">Braunschweig</option>
+                <option value="Bremen">Bremen</option>
+                <option value="Chemnitz">Chemnitz</option>
+                <option value="Darmstadt">Darmstadt</option>
+                <option value="Dortmund">Dortmund</option>
+                <option value="Dresden">Dresden</option>
+                <option value="Duisburg">Duisburg</option>
+                <option value="D\u00fcsseldorf">D\u00fcsseldorf</option>
+                <option value="Erfurt">Erfurt</option>
+                <option value="Erlangen">Erlangen</option>
+                <option value="Essen">Essen</option>
+                <option value="Frankfurt am Main">Frankfurt am Main</option>
+                <option value="Freiburg">Freiburg</option>
+                <option value="G\u00f6ttingen">G\u00f6ttingen</option>
+                <option value="Halle">Halle</option>
+                <option value="Hamburg">Hamburg</option>
+                <option value="Hannover">Hannover</option>
+                <option value="Heidelberg">Heidelberg</option>
+                <option value="Ingolstadt">Ingolstadt</option>
+                <option value="Jena">Jena</option>
+                <option value="Karlsruhe">Karlsruhe</option>
+                <option value="Kassel">Kassel</option>
+                <option value="Kiel">Kiel</option>
+                <option value="K\u00f6ln">K\u00f6ln</option>
+                <option value="Mannheim">Mannheim</option>
+                <option value="M\u00fcnchen">M\u00fcnchen</option>
+                <option value="M\u00fcnster">M\u00fcnster</option>
+                <option value="N\u00fcrnberg">N\u00fcrnberg</option>
+                <option value="Potsdam">Potsdam</option>
+                <option value="Regensburg">Regensburg</option>
+                <option value="Rostock">Rostock</option>
+                <option value="Saarbr\u00fccken">Saarbr\u00fccken</option>
+                <option value="Stuttgart">Stuttgart</option>
+                <option value="Ulm">Ulm</option>
+                <option value="Wiesbaden">Wiesbaden</option>
+                <option value="Wolfsburg">Wolfsburg</option>
+                <option value="W\u00fcrzburg">W\u00fcrzburg</option>
+                <option value="Wuppertal">Wuppertal</option>
+            </select>
+            <button class="btn btn-secondary btn-sm" onclick="addCity()" type="button">Add</button>
         </div>
         <button class="btn btn-primary btn-sm" onclick="startScrape(false)" id="btn-scrape">
             Scrape Fresh Jobs
@@ -40,6 +86,21 @@
 <div id="compile-status" class="status-msg" style="display:none;"></div>
 <div id="scrape-status" class="status-msg" style="display:none;"></div>
 <div id="scrape-log" class="log-window" style="display:none;"></div>
+
+<!-- Live Jobs Container (populated dynamically during scrape) -->
+<div id="live-jobs-container" class="card" style="display:none;">
+    <div class="card-header">
+        <div class="card-title"><span class="spinner"></span> Live Results — <span id="live-job-count">0</span> jobs found so far</div>
+    </div>
+    <div class="table-wrap">
+        <table class="job-table" id="live-jobs-table">
+            <thead>
+                <tr><th>#</th><th>Title</th><th>Company</th><th>Location</th><th>Source</th><th>Match</th><th>Posted</th></tr>
+            </thead>
+            <tbody id="live-jobs-body"></tbody>
+        </table>
+    </div>
+</div>
 
 <!-- ── ATS Score Section ── -->
 {% if ats_reports %}

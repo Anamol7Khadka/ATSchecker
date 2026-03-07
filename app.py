@@ -247,7 +247,7 @@ def compile_cv():
 
             src = os.path.join(tex_dir, "main.pdf")
             if os.path.exists(src):
-                dest = os.path.join(cv_folder, "main.pdf")
+                dest = os.path.join(cv_folder, "Aakash_khadka_CV.pdf")
                 shutil.copy2(src, dest)
                 state["compile_status"]["message"] = "Running ATS check..."
                 run_ats_on_cv(dest)
@@ -275,11 +275,11 @@ def upload_cv():
     for old in Path(cv_folder).glob("*.pdf"):
         old.unlink()
 
-    dest = os.path.join(cv_folder, f.filename)
+    dest = os.path.join(cv_folder, "Aakash_khadka_CV.pdf")
     f.save(dest)
     try:
         run_ats_on_cv(dest)
-        return jsonify({"status": "success", "message": f"Uploaded and analyzed {f.filename}"})
+        return jsonify({"status": "success", "message": "Uploaded and analyzed Aakash_khadka_CV.pdf"})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -294,17 +294,35 @@ def start_scrape():
     if request.is_json:
         selected_cities = request.json.get("cities") or None
 
+    def _on_batch(new_jobs):
+        """Called after each city scrape — push jobs into state immediately."""
+        state["jobs"].extend(new_jobs)
+
     def _scrape():
         state["scrape_status"] = {"running": True, "message": "Starting scrapers..."}
         state["scrape_logs"] = []
+        # Clear old jobs so live panel starts fresh
+        state["jobs"] = []
+        state["matches"] = []
+
+        # Delete old cache file so stale jobs are truly gone
+        config = get_config()
+        cache_path = os.path.join(
+            PROJECT_ROOT,
+            config.get("paths", {}).get("cache_file", ".job_cache.json"),
+        )
+        if not use_cache and os.path.exists(cache_path):
+            os.remove(cache_path)
+
         try:
-            config = get_config()
             jobs = scrape_all_jobs(
                 config=config,
                 use_cache=use_cache,
                 cities=selected_cities,
                 logger=_log_scrape,
+                on_batch=_on_batch,
             )
+            # Replace with deduplicated final list (same data, just deduped)
             state["jobs"] = jobs
             if state["cv_data"]:
                 state["scrape_status"]["message"] = "Matching jobs to CV..."
@@ -332,6 +350,57 @@ def get_status():
 @app.route("/api/scrape/logs")
 def get_scrape_logs():
     return jsonify({"logs": state.get("scrape_logs", [])})
+
+
+@app.route("/api/jobs")
+def get_jobs_live():
+    """Return current jobs list sorted: recent postings first, then by match score."""
+    match_lookup = {m.job.url: m for m in state["matches"]}
+    indexed = list(enumerate(state["jobs"]))
+
+    def _sort_key(item):
+        _, job = item
+        recent = 0 if is_within_24h(job) else 1
+        m = match_lookup.get(job.url)
+        score = -(m.overall_score if m else 0)
+        return (recent, score)
+
+    indexed.sort(key=_sort_key)
+
+    jobs_data = []
+    for orig_idx, job in indexed:
+        m = match_lookup.get(job.url)
+        jobs_data.append({
+            "id": orig_idx,
+            "title": job.title[:65],
+            "company": job.company[:35] if job.company else "",
+            "location": job.location[:25] if job.location else "",
+            "source": job.source or "",
+            "posted_date": str(job.posted_date or "N/A"),
+            "match": round(m.overall_score, 1) if m else 0,
+            "recent": is_within_24h(job),
+        })
+    return jsonify({
+        "jobs": jobs_data,
+        "total": len(jobs_data),
+        "scraping": state["scrape_status"]["running"],
+    })
+
+
+@app.route("/api/shutdown", methods=["POST"])
+def shutdown():
+    """Gracefully shut down the Flask server to free the port."""
+    func = request.environ.get('werkzeug.server.shutdown')
+    if func:
+        func()
+    else:
+        # For newer Werkzeug versions, use os._exit in a thread
+        def _shutdown():
+            import time
+            time.sleep(0.5)
+            os._exit(0)
+        threading.Thread(target=_shutdown, daemon=True).start()
+    return jsonify({"status": "shutting_down", "message": "Server shutting down... port will be freed."})
 
 
 @app.route("/api/analyze/<int:job_id>", methods=["POST"])
@@ -408,11 +477,26 @@ def load_existing_data():
                 print(f"  Warning: Could not load CV: {e}")
 
 
+def find_free_port(start=5001, end=5020):
+    """Find the first free port in a range."""
+    import socket
+    for port in range(start, end):
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.bind(("127.0.0.1", port))
+                return port
+        except OSError:
+            continue
+    return start
+
+
 if __name__ == "__main__":
     print("=" * 60)
     print("  ATSchecker — Web Dashboard")
     print("=" * 60)
     load_existing_data()
-    print(f"\n  Open http://localhost:5000 in your browser\n")
+    port = find_free_port()
+    print(f"\n  Open http://localhost:{port} in your browser")
+    print(f"  (Use the Quit button in the navbar to safely stop the server)\n")
     print("=" * 60)
-    app.run(debug=True, port=5000, use_reloader=False)
+    app.run(debug=False, host="127.0.0.1", port=port, use_reloader=False)

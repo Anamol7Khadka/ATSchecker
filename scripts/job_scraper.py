@@ -128,6 +128,7 @@ def scrape_all_jobs(
     keywords: List[str] = None,
     job_types: List[str] = None,
     logger=print,
+    on_batch=None,
 ) -> List[JobPosting]:
     """
     Run all configured scrapers and return a deduplicated list of JobPostings.
@@ -185,6 +186,8 @@ def scrape_all_jobs(
                 city_jobs = scraper.scrape(city, keywords, job_types)
                 scraper_jobs.extend(city_jobs)
                 logger(f"    → Found {len(city_jobs)} jobs in {city}")
+                if on_batch and city_jobs:
+                    on_batch(city_jobs)
             except Exception as e:
                 logger(f"    ✗ Error scraping {city}: {e}")
 

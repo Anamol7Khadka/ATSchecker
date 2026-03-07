@@ -85,12 +85,18 @@ scraping:
   # Priority order for scrapers (first = highest priority)
   scraper_priority:
     - arbeitnow
+    - adzuna
+    - remoteok
     - google_jobs
     - linkedin
     - indeed
     - stepstone
     - xing
     - jobteaser
+
+  # Adzuna API (free — register at https://developer.adzuna.com/)
+  # adzuna_app_id: "YOUR_APP_ID"
+  # adzuna_app_key: "YOUR_APP_KEY"
 
 # ATS checker settings
 ats:

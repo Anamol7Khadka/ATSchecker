@@ -1,91 +1,88 @@
 """
-google_jobs.py — Google Search aggregation scraper.
-Uses googlesearch-python to find job postings across LinkedIn, StepStone, Indeed, XING, etc.
+google_jobs.py — Search aggregation scraper using DuckDuckGo.
+Uses duckduckgo_search to find job postings across LinkedIn, StepStone, Indeed, XING, etc.
+DuckDuckGo is far more tolerant of automated queries than Google.
 """
 
 import time
-import re
 from datetime import datetime
 from typing import List
 
 from scrapers.base import BaseScraper, JobPosting
 
 try:
-    from googlesearch import search as google_search
+    from duckduckgo_search import DDGS
+    DDG_AVAILABLE = True
 except ImportError:
-    google_search = None
+    DDG_AVAILABLE = False
 
 
 class GoogleJobsScraper(BaseScraper):
-    name = "Google Jobs"
+    name = "SearchAggregator"
 
-    SITE_FILTERS = [
-        "site:linkedin.com/jobs",
-        "site:stepstone.de",
-        "site:indeed.de OR site:de.indeed.com",
-        "site:xing.com/jobs",
-        "site:jobteaser.com",
+    JOB_SITES = [
+        "linkedin.com/jobs",
+        "stepstone.de",
+        "indeed.de",
+        "de.indeed.com",
+        "xing.com/jobs",
+        "jobteaser.com",
+        "glassdoor.de",
+        "monster.de",
+        "karriere.de",
+        "jobs.meinestadt.de",
     ]
 
     def scrape(
         self, city: str, keywords: List[str], job_types: List[str]
     ) -> List[JobPosting]:
-        if google_search is None:
-            print(f"[{self.name}] googlesearch-python not installed, skipping.")
+        if not DDG_AVAILABLE:
+            print(f"[{self.name}] duckduckgo_search not installed, skipping.")
             return []
 
         jobs = []
-        try:
-            # Build queries combining job types, keywords, and city (no early slicing)
-            for jt in job_types:
-                for kw in keywords:
-                    query = f'{jt} {kw} {city} Germany'
 
-                    # Also search with site filters for broader coverage
-                    site_query = f'{query} ({" OR ".join(self.SITE_FILTERS[:3])})'
+        try:
+            for jt in job_types[:6]:
+                for kw in keywords[:6]:
+                    query = f"{jt} {kw} {city} Germany job"
 
                     try:
-                        results = list(
-                            google_search(
-                                site_query,
-                                num_results=20,
-                                lang="en",
-                            )
-                        )
-                    except Exception:
-                        # Fall back to simpler query
-                        try:
-                            results = list(
-                                google_search(query, num_results=20, lang="en")
-                            )
-                        except Exception as e2:
-                            print(f"[{self.name}] Search failed for '{query}': {e2}")
+                        with DDGS() as ddgs:
+                            results = list(ddgs.text(query, max_results=20, region="de-de"))
+                    except Exception as e:
+                        print(f"[{self.name}] DuckDuckGo search failed for '{query}': {e}")
+                        time.sleep(3)
+                        continue
+
+                    for r in results:
+                        url = r.get("href", "") or r.get("link", "")
+                        title = r.get("title", "")
+                        snippet = r.get("body", "")
+
+                        if not url or not isinstance(url, str):
                             continue
 
-                    for url in results:
-                        if not isinstance(url, str):
-                            continue
-
-                        # Extract source from URL
+                        # Check if it's a job board URL
                         source_detail = self._detect_source(url)
                         if not source_detail:
-                            continue  # Skip non-job URLs
+                            continue
 
-                        # Extract title from URL (best effort)
-                        title = self._extract_title_from_url(url, jt, kw)
+                        # Use search result title if available, else extract from URL
+                        if not title or len(title) < 5:
+                            title = self._extract_title_from_url(url, jt, kw)
 
-                        # Avoid duplicates
                         if any(j.url == url for j in jobs):
                             continue
 
                         jobs.append(
                             JobPosting(
                                 title=title,
-                                company="(via Google Search)",
+                                company=f"(via {source_detail})",
                                 location=city,
                                 url=url,
-                                description=f"Found via Google: {jt} {kw} in {city}",
-                                source=f"Google→{source_detail}",
+                                description=snippet[:500] if snippet else f"Found via search: {jt} {kw} in {city}",
+                                source=f"DDG→{source_detail}",
                                 job_type=jt,
                                 posted_date=datetime.now().isoformat(),
                             )
@@ -108,7 +105,6 @@ class GoogleJobsScraper(BaseScraper):
 
     @staticmethod
     def _detect_source(url: str) -> str:
-        """Detect which job board a URL belongs to."""
         url_lower = url.lower()
         if "linkedin.com" in url_lower:
             return "LinkedIn"
@@ -124,23 +120,23 @@ class GoogleJobsScraper(BaseScraper):
             return "Glassdoor"
         elif "monster" in url_lower:
             return "Monster"
+        elif "karriere" in url_lower:
+            return "Karriere"
+        elif "meinestadt" in url_lower:
+            return "MeineStadt"
         return ""
 
     @staticmethod
     def _extract_title_from_url(url: str, job_type: str, keyword: str) -> str:
-        """Best-effort title extraction from URL path segments."""
         try:
             from urllib.parse import urlparse, unquote
             path = unquote(urlparse(url).path)
-            # Common patterns: /jobs/view/title-here or /stellenangebot/title-here
             segments = [s for s in path.split("/") if s and len(s) > 5]
             if segments:
-                # Take the longest segment as likely title
                 title_segment = max(segments, key=len)
                 title = title_segment.replace("-", " ").replace("_", " ").strip()
-                # Capitalize words
                 title = " ".join(w.capitalize() for w in title.split())
-                return title[:100]  # Truncate
+                return title[:100]
         except Exception:
             pass
         return f"{job_type} — {keyword}"

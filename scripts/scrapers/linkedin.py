@@ -59,8 +59,8 @@ class LinkedInScraper(BaseScraper):
         try:
             driver = self._get_driver()
 
-            for jt in job_types:
-                for kw in keywords:
+            for jt in job_types[:6]:
+                for kw in keywords[:6]:
                     query = f"{jt} {kw}"
                     location = f"{city}, Germany"
 

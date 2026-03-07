@@ -1,65 +1,80 @@
 """
 jobteaser.py — Jobteaser scraper using Selenium.
 Jobteaser is a university-connected job board popular in Europe.
-Falls back to Google search if SSO/login is required.
+Falls back to DuckDuckGo search if SSO/login is required.
 """
 
 import time
+from datetime import datetime
 from typing import List
 from urllib.parse import quote_plus
 
 from scrapers.base import BaseScraper, JobPosting
 
 try:
-    from selenium import webdriver
-    from selenium.webdriver.chrome.options import Options
-    from selenium.webdriver.chrome.service import Service
+    import undetected_chromedriver as uc
     from selenium.webdriver.common.by import By
-    from webdriver_manager.chrome import ChromeDriverManager
-
-    SELENIUM_AVAILABLE = True
+    UC_AVAILABLE = True
 except ImportError:
-    SELENIUM_AVAILABLE = False
+    UC_AVAILABLE = False
 
 try:
-    from googlesearch import search as google_search
-    GOOGLE_AVAILABLE = True
+    from duckduckgo_search import DDGS
+    DDG_AVAILABLE = True
 except ImportError:
-    GOOGLE_AVAILABLE = False
+    DDG_AVAILABLE = False
+
+def _detect_chrome_version():
+    import subprocess, re as _re
+    for path in ["/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+                 "google-chrome", "chromium-browser", "chromium"]:
+        try:
+            out = subprocess.check_output([path, "--version"], stderr=subprocess.DEVNULL, text=True)
+            m = _re.search(r"(\d+)", out)
+            if m: return int(m.group(1))
+        except Exception: continue
+    return None
+
+_CHROME_VERSION = _detect_chrome_version()
 
 
 class JobteaserScraper(BaseScraper):
     name = "Jobteaser"
 
     def _get_driver(self):
-        opts = Options()
+        options = uc.ChromeOptions()
         if self.headless:
-            opts.add_argument("--headless=new")
-        opts.add_argument("--no-sandbox")
-        opts.add_argument("--disable-dev-shm-usage")
-        opts.add_argument("--disable-gpu")
-        opts.add_argument("--window-size=1920,1080")
-        opts.add_argument(
-            "user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-        )
+            options.add_argument("--headless=new")
+        options.add_argument("--no-sandbox")
+        options.add_argument("--disable-dev-shm-usage")
+        options.add_argument("--disable-gpu")
+        options.add_argument("--window-size=1920,1080")
+        options.add_argument("--lang=de-DE")
+        kw = {"options": options, "use_subprocess": True}
+        if _CHROME_VERSION:
+            kw["version_main"] = _CHROME_VERSION
         try:
-            service = Service(ChromeDriverManager().install())
-            return webdriver.Chrome(service=service, options=opts)
+            return uc.Chrome(**kw)
         except Exception:
-            return webdriver.Chrome(options=opts)
+            kw.pop("use_subprocess", None)
+            return uc.Chrome(**kw)
 
     def scrape(
         self, city: str, keywords: List[str], job_types: List[str]
     ) -> List[JobPosting]:
-        # Jobteaser typically requires SSO — try direct first, then Google fallback
         jobs = []
 
-        if SELENIUM_AVAILABLE:
+        # Jobteaser typically requires SSO — try direct first, then DDG fallback
+        if UC_AVAILABLE:
             jobs = self._scrape_selenium(city, keywords, job_types)
 
-        if not jobs and GOOGLE_AVAILABLE:
-            jobs = self._scrape_google_fallback(city, keywords, job_types)
+        if len(jobs) < 3 and DDG_AVAILABLE:
+            ddg_jobs = self._scrape_ddg_fallback(city, keywords, job_types)
+            existing_urls = {j.url for j in jobs}
+            for j in ddg_jobs:
+                if j.url not in existing_urls:
+                    jobs.append(j)
+                    existing_urls.add(j.url)
 
         return jobs
 
@@ -72,8 +87,8 @@ class JobteaserScraper(BaseScraper):
         try:
             driver = self._get_driver()
 
-            for jt in job_types:
-                for kw in keywords:
+            for jt in job_types[:6]:
+                for kw in keywords[:6]:
                     query = f"{jt} {kw}"
                     url = (
                         f"https://www.jobteaser.com/en/job-offers"
@@ -87,8 +102,13 @@ class JobteaserScraper(BaseScraper):
                     page_source = driver.page_source.lower()
                     if "sign in" in page_source or "log in" in page_source:
                         if "job" not in page_source[:1000]:
-                            print(f"[{self.name}] SSO/login required, using Google fallback.")
+                            print(f"[{self.name}] SSO/login required, using DuckDuckGo fallback.")
                             break
+
+                    # Scroll to load content
+                    for _ in range(2):
+                        driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+                        time.sleep(1)
 
                     # Find job cards
                     card_selectors = [
@@ -96,6 +116,7 @@ class JobteaserScraper(BaseScraper):
                         "div[class*='job-offer']",
                         "li[class*='job']",
                         "a[class*='offer']",
+                        "div[class*='JobCard']",
                     ]
 
                     cards = []
@@ -162,35 +183,43 @@ class JobteaserScraper(BaseScraper):
 
         return jobs
 
-    def _scrape_google_fallback(
+    def _scrape_ddg_fallback(
         self, city: str, keywords: List[str], job_types: List[str]
     ) -> List[JobPosting]:
+        """Fallback: use DuckDuckGo search to find Jobteaser listings."""
         jobs = []
 
-        for jt in job_types:
-            for kw in keywords:
-                query = f"{jt} {kw} {city} Germany site:jobteaser.com"
+        for jt in job_types[:6]:
+            for kw in keywords[:6]:
+                # DDG doesn't support site: operator — use jobteaser.com as keyword
+                query = f"{jt} {kw} {city} Germany jobteaser.com"
 
                 try:
-                    results = list(google_search(query, num_results=5, lang="en"))
+                    with DDGS() as ddgs:
+                        results = list(ddgs.text(query, max_results=10, region="de-de"))
                 except Exception as e:
-                    print(f"[{self.name}] Google fallback failed: {e}")
+                    print(f"[{self.name}] DuckDuckGo fallback failed: {e}")
+                    time.sleep(2)
                     continue
 
-                for url in results:
-                    if not isinstance(url, str) or "jobteaser.com" not in url.lower():
-                        continue
+                for r in results:
+                    url = r.get("href", "") or r.get("link", "")
+                    title = r.get("title", "")
 
+                    if not url or not isinstance(url, str):
+                        continue
+                    if "jobteaser.com" not in url.lower():
+                        continue
                     if any(j.url == url for j in jobs):
                         continue
 
                     jobs.append(
                         JobPosting(
-                            title=f"{jt} — {kw}",
-                            company="(via Jobteaser/Google)",
+                            title=title if title else f"{jt} — {kw}",
+                            company="(via Jobteaser/DDG)",
                             location=city,
                             url=url,
-                            source=f"Google→Jobteaser",
+                            source="DDG→Jobteaser",
                             job_type=jt,
                             posted_date=datetime.now().isoformat(),
                         )

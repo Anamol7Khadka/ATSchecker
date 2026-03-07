@@ -25,7 +25,7 @@ sys.path.insert(0, SCRIPT_DIR)
 
 from cv_parser import parse_cv
 from ats_checker import run_ats_check
-from job_scraper import load_config, scrape_all_jobs, get_cached_jobs
+from job_scraper import load_config, scrape_all_jobs, get_cached_jobs, deduplicate_jobs
 from cv_job_matcher import match_cv_to_jobs, analyze_skills_gap
 
 app = Flask(__name__)
@@ -295,26 +295,19 @@ def start_scrape():
         selected_cities = request.json.get("cities") or None
 
     def _on_batch(new_jobs):
-        """Called after each city scrape — push jobs into state immediately."""
-        state["jobs"].extend(new_jobs)
+        """Called after each city scrape — push jobs into state immediately, deduped against existing."""
+        for job in new_jobs:
+            # Quick URL dedup against what's already in state
+            if not any(j.url == job.url for j in state["jobs"]):
+                state["jobs"].append(job)
 
     def _scrape():
         state["scrape_status"] = {"running": True, "message": "Starting scrapers..."}
         state["scrape_logs"] = []
-        # Clear old jobs so live panel starts fresh
-        state["jobs"] = []
-        state["matches"] = []
-
-        # Delete old cache file so stale jobs are truly gone
-        config = get_config()
-        cache_path = os.path.join(
-            PROJECT_ROOT,
-            config.get("paths", {}).get("cache_file", ".job_cache.json"),
-        )
-        if not use_cache and os.path.exists(cache_path):
-            os.remove(cache_path)
+        # Keep existing jobs — don't clear them
 
         try:
+            config = get_config()
             jobs = scrape_all_jobs(
                 config=config,
                 use_cache=use_cache,
@@ -322,14 +315,16 @@ def start_scrape():
                 logger=_log_scrape,
                 on_batch=_on_batch,
             )
-            # Replace with deduplicated final list (same data, just deduped)
-            state["jobs"] = jobs
-            if state["cv_data"]:
-                state["scrape_status"]["message"] = "Matching jobs to CV..."
-                _run_matching(state["cv_data"])
-            state["scrape_status"] = {"running": False, "message": f"Done! Found {len(jobs)} jobs."}
+            # Merge newly scraped jobs with any pre-existing ones
+            combined = list(state["jobs"])  # snapshot current (includes on_batch additions)
+            for job in jobs:
+                if not any(j.url == job.url for j in combined):
+                    combined.append(job)
+            state["jobs"] = deduplicate_jobs(combined)
+            state["scrape_status"] = {"running": False, "message": f"Done! {len(state['jobs'])} total jobs available. Click 'Sort & Analyze' to rank them."}
         except Exception as e:
-            state["scrape_status"] = {"running": False, "message": f"Error: {e}"}
+            # Even on error, keep whatever jobs were found so far
+            state["scrape_status"] = {"running": False, "message": f"Stopped: {e}. {len(state['jobs'])} jobs kept."}
 
     threading.Thread(target=_scrape, daemon=True).start()
     return jsonify({"status": "started"})
@@ -385,6 +380,34 @@ def get_jobs_live():
         "total": len(jobs_data),
         "scraping": state["scrape_status"]["running"],
     })
+
+
+@app.route("/api/analyze-jobs", methods=["POST"])
+def analyze_jobs():
+    """Run CV matching and sort jobs by likelihood + recency. Called after scraping."""
+    if not state["cv_data"]:
+        return jsonify({"error": "No CV loaded. Upload or compile your CV first."}), 400
+    if not state["jobs"]:
+        return jsonify({"error": "No jobs to analyze."}), 400
+
+    try:
+        _run_matching(state["cv_data"])
+        # Save updated cache
+        from job_scraper import save_cache
+        config = get_config()
+        cache_path = os.path.join(
+            PROJECT_ROOT,
+            config.get("paths", {}).get("cache_file", ".job_cache.json"),
+        )
+        save_cache(cache_path, state["jobs"])
+        return jsonify({
+            "status": "success",
+            "message": f"Analyzed {len(state['jobs'])} jobs. Sorted by match score + recency.",
+            "job_count": len(state["jobs"]),
+            "match_count": len(state["matches"]),
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/api/shutdown", methods=["POST"])

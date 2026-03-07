@@ -20,6 +20,8 @@ from scrapers.indeed import IndeedScraper
 from scrapers.stepstone import StepStoneScraper
 from scrapers.xing import XingScraper
 from scrapers.jobteaser import JobteaserScraper
+from scrapers.adzuna import AdzunaScraper
+from scrapers.remoteok import RemoteOKScraper
 
 
 # Registry of all available scrapers
@@ -31,6 +33,8 @@ SCRAPER_REGISTRY = {
     "stepstone": StepStoneScraper,
     "xing": XingScraper,
     "jobteaser": JobteaserScraper,
+    "adzuna": AdzunaScraper,
+    "remoteok": RemoteOKScraper,
 }
 
 
@@ -196,9 +200,14 @@ def scrape_all_jobs(
         all_jobs.extend(scraper_jobs)
         logger(f"  Total from {scraper.name}: {len(scraper_jobs)} jobs")
 
-    # Deduplicate
+        # Incremental save after each scraper completes
+        intermediate = deduplicate_jobs(all_jobs)
+        save_cache(cache_path, intermediate)
+        logger(f"  💾 Saved {len(intermediate)} jobs to cache (incremental)")
+
+    # Final deduplication
     logger(f"\n{'─'*50}")
-    logger(f"Deduplicating {len(all_jobs)} total job listings...")
+    logger(f"Final deduplication of {len(all_jobs)} total job listings...")
     unique_jobs = deduplicate_jobs(all_jobs)
     logger(f"After deduplication: {len(unique_jobs)} unique jobs")
 

@@ -227,6 +227,10 @@ function pollStatus(task) {
                     statusEl.className = 'status-msg success';
                     statusEl.textContent = info.message;
 
+                    // Re-enable scrape button
+                    var scrapeBtn = document.getElementById('btn-scrape');
+                    if (scrapeBtn) { scrapeBtn.disabled = false; scrapeBtn.innerHTML = 'Scrape Fresh Jobs'; }
+
                     // Do one final live-jobs fetch, then stop polling
                     if (_liveJobsInterval) {
                         clearInterval(_liveJobsInterval);
@@ -243,8 +247,9 @@ function pollStatus(task) {
                                 var container = document.getElementById('live-jobs-container');
                                 if (container) container.appendChild(note);
                             }
-                            note.innerHTML = '<span style="color:var(--accent-green);font-weight:600;">Scraping complete — ' + d.total + ' jobs found.</span> ' +
-                                '<button class="btn btn-sm btn-primary" onclick="location.reload()" style="margin-left:10px;">Refresh for match scores</button>';
+                            note.innerHTML = '<span style="color:var(--accent-green);font-weight:600;">Scraping complete \u2014 ' + d.total + ' jobs found.</span> ' +
+                                '<button class="btn btn-sm btn-success" onclick="analyzeJobs()" style="margin-left:10px;">\u2728 Sort &amp; Analyze</button>' +
+                                '<button class="btn btn-sm btn-secondary" onclick="location.reload()" style="margin-left:6px;">Refresh page</button>';
                         }).catch(() => {});
                     } else {
                         // Compile or cache-load — safe to reload
@@ -341,6 +346,40 @@ function escHtml(str) {
     const d = document.createElement('div');
     d.textContent = str || '';
     return d.innerHTML;
+}
+
+// ─── Sort & Analyze Jobs ───
+function analyzeJobs() {
+    var note = document.getElementById('live-done-note');
+    if (note) {
+        note.innerHTML = '<span class="spinner"></span> <span style="color:var(--accent-blue);">Analyzing and sorting jobs by match score + recency...</span>';
+    }
+    fetch('/api/analyze-jobs', { method: 'POST' })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            if (data.status === 'success') {
+                if (note) {
+                    note.innerHTML = '<span style="color:var(--accent-green);font-weight:600;">' + data.message + '</span>';
+                }
+                // Re-fetch sorted jobs and redraw the live table
+                fetch('/api/jobs').then(function (r) { return r.json(); }).then(function (d) {
+                    _renderLiveBatch(d.jobs, true);
+                    // Reload page after a brief delay to show full dashboard with match scores
+                    setTimeout(function () { location.reload(); }, 2000);
+                });
+            } else {
+                if (note) {
+                    note.innerHTML = '<span style="color:var(--accent-red);">' + (data.error || 'Analysis failed') + '</span>' +
+                        ' <button class="btn btn-sm btn-secondary" onclick="location.reload()" style="margin-left:6px;">Refresh page</button>';
+                }
+            }
+        })
+        .catch(function (err) {
+            if (note) {
+                note.innerHTML = '<span style="color:var(--accent-red);">Error: ' + escHtml(err.message) + '</span>' +
+                    ' <button class="btn btn-sm btn-secondary" onclick="location.reload()" style="margin-left:6px;">Refresh page</button>';
+            }
+        });
 }
 
 // ─── Safe Quit ───

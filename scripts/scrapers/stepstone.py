@@ -9,7 +9,7 @@ from datetime import datetime
 from typing import List
 from urllib.parse import quote_plus
 
-from scrapers.base import BaseScraper, JobPosting
+from scrapers.base import BaseScraper, JobPosting, is_listing_page
 
 try:
     import undetected_chromedriver as uc
@@ -262,6 +262,10 @@ class StepStoneScraper(BaseScraper):
                         if "stepstone" not in url.lower():
                             continue
                         if url in seen_urls:
+                            continue
+                        title = r.get("title", "")
+                        # Skip search/listing pages
+                        if is_listing_page(title, url):
                             continue
                         seen_urls.add(url)
 

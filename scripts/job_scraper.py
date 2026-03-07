@@ -6,13 +6,15 @@ Coordinates all scraper backends, handles deduplication, caching, and rate limit
 import json
 import os
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 from typing import Dict, List
 
+import requests
 import yaml
 from rapidfuzz import fuzz
 
-from scrapers.base import JobPosting
+from scrapers.base import JobPosting, is_listing_page
 from scrapers.arbeitnow import ArbeitnowScraper
 from scrapers.google_jobs import GoogleJobsScraper
 from scrapers.linkedin import LinkedInScraper
@@ -86,6 +88,7 @@ def deduplicate_jobs(jobs: List[JobPosting], threshold: int = 80) -> List[JobPos
     """
     Remove duplicate job postings based on URL exact match
     and fuzzy title+company matching.
+    Also removes listing/search pages that slipped through.
     """
     unique = []
     seen_urls = set()
@@ -94,6 +97,11 @@ def deduplicate_jobs(jobs: List[JobPosting], threshold: int = 80) -> List[JobPos
         # Exact URL match
         if job.url in seen_urls:
             continue
+
+        # Filter out listing/search pages (title like "257 jobs in Berlin")
+        if is_listing_page(job.title, job.url):
+            continue
+
         seen_urls.add(job.url)
 
         # Fuzzy match against existing jobs
@@ -121,6 +129,63 @@ def deduplicate_jobs(jobs: List[JobPosting], threshold: int = 80) -> List[JobPos
             unique.append(job)
 
     return unique
+
+
+_VERIFY_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "de-DE,de;q=0.9,en;q=0.8",
+}
+
+
+def _check_url(job: JobPosting) -> bool:
+    """Return True if the job URL appears to be a live page (not 404/gone)."""
+    try:
+        resp = requests.head(
+            job.url, headers=_VERIFY_HEADERS,
+            timeout=8, allow_redirects=True,
+        )
+        # Accept any 2xx or 3xx; reject 404, 410, 403 (often means blocked/gone)
+        if resp.status_code < 400:
+            return True
+        # Some sites block HEAD but accept GET — try a light GET
+        if resp.status_code in (403, 405):
+            resp = requests.get(
+                job.url, headers=_VERIFY_HEADERS,
+                timeout=8, allow_redirects=True, stream=True,
+            )
+            resp.close()
+            return resp.status_code < 400
+        return False
+    except requests.RequestException:
+        # Timeout / connection error — give the benefit of the doubt
+        return True
+
+
+def verify_job_urls(
+    jobs: List[JobPosting], logger=print, max_workers: int = 10
+) -> List[JobPosting]:
+    """Verify job URLs in parallel, removing dead links."""
+    if not jobs:
+        return jobs
+
+    verified = []
+    dead = 0
+    with ThreadPoolExecutor(max_workers=max_workers) as pool:
+        future_to_job = {pool.submit(_check_url, j): j for j in jobs}
+        for future in as_completed(future_to_job):
+            job = future_to_job[future]
+            try:
+                if future.result():
+                    verified.append(job)
+                else:
+                    dead += 1
+            except Exception:
+                verified.append(job)  # on error, keep the job
+
+    if dead:
+        logger(f"  🗑 Removed {dead} dead/expired job links")
+    return verified
 
 
 def scrape_all_jobs(
@@ -210,6 +275,11 @@ def scrape_all_jobs(
     logger(f"Final deduplication of {len(all_jobs)} total job listings...")
     unique_jobs = deduplicate_jobs(all_jobs)
     logger(f"After deduplication: {len(unique_jobs)} unique jobs")
+
+    # Verify URLs are still alive
+    logger(f"Verifying {len(unique_jobs)} job URLs...")
+    unique_jobs = verify_job_urls(unique_jobs, logger=logger)
+    logger(f"After verification: {len(unique_jobs)} verified jobs")
 
     # Save to cache
     save_cache(cache_path, unique_jobs)

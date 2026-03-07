@@ -26,6 +26,7 @@ sys.path.insert(0, SCRIPT_DIR)
 from cv_parser import parse_cv
 from ats_checker import run_ats_check
 from job_scraper import load_config, scrape_all_jobs, get_cached_jobs, deduplicate_jobs
+from scrapers.base import is_listing_page
 from cv_job_matcher import match_cv_to_jobs, analyze_skills_gap
 
 app = Flask(__name__)
@@ -295,8 +296,11 @@ def start_scrape():
         selected_cities = request.json.get("cities") or None
 
     def _on_batch(new_jobs):
-        """Called after each city scrape — push jobs into state immediately, deduped against existing."""
+        """Called after each city scrape — push jobs into state immediately, deduped and filtered."""
         for job in new_jobs:
+            # Filter out search listing pages
+            if is_listing_page(job.title, job.url):
+                continue
             # Quick URL dedup against what's already in state
             if not any(j.url == job.url for j in state["jobs"]):
                 state["jobs"].append(job)
@@ -315,13 +319,9 @@ def start_scrape():
                 logger=_log_scrape,
                 on_batch=_on_batch,
             )
-            # Merge newly scraped jobs with any pre-existing ones
-            combined = list(state["jobs"])  # snapshot current (includes on_batch additions)
-            for job in jobs:
-                if not any(j.url == job.url for j in combined):
-                    combined.append(job)
-            state["jobs"] = deduplicate_jobs(combined)
-            state["scrape_status"] = {"running": False, "message": f"Done! {len(state['jobs'])} total jobs available. Click 'Sort & Analyze' to rank them."}
+            # Replace state with final verified+deduplicated jobs from scrape_all_jobs
+            state["jobs"] = jobs
+            state["scrape_status"] = {"running": False, "message": f"Done! {len(state['jobs'])} verified jobs available. Click 'Sort & Analyze' to rank them."}
         except Exception as e:
             # Even on error, keep whatever jobs were found so far
             state["scrape_status"] = {"running": False, "message": f"Stopped: {e}. {len(state['jobs'])} jobs kept."}

@@ -10,7 +10,7 @@ from typing import List
 
 from bs4 import BeautifulSoup
 
-from scrapers.base import BaseScraper, JobPosting
+from scrapers.base import BaseScraper, JobPosting, is_listing_page
 
 try:
     import undetected_chromedriver as uc
@@ -264,6 +264,10 @@ class IndeedScraper(BaseScraper):
                         if "indeed" not in url.lower():
                             continue
                         if url in seen_urls:
+                            continue
+                        title = r.get("title", "")
+                        # Skip search/listing pages
+                        if is_listing_page(title, url):
                             continue
                         seen_urls.add(url)
 

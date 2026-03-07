@@ -8,7 +8,7 @@ import time
 from datetime import datetime
 from typing import List
 
-from scrapers.base import BaseScraper, JobPosting
+from scrapers.base import BaseScraper, JobPosting, is_listing_page
 
 try:
     from duckduckgo_search import DDGS
@@ -66,6 +66,10 @@ class GoogleJobsScraper(BaseScraper):
                         # Check if it's a job board URL
                         source_detail = self._detect_source(url)
                         if not source_detail:
+                            continue
+
+                        # Skip search/listing pages — we only want individual jobs
+                        if is_listing_page(title, url):
                             continue
 
                         # Use search result title if available, else extract from URL

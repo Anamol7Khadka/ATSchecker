@@ -8,7 +8,7 @@ from datetime import datetime
 from typing import List
 from urllib.parse import quote_plus
 
-from scrapers.base import BaseScraper, JobPosting
+from scrapers.base import BaseScraper, JobPosting, is_listing_page
 
 try:
     import undetected_chromedriver as uc
@@ -221,6 +221,9 @@ class XingScraper(BaseScraper):
                         continue
                     # Only keep XING URLs
                     if "xing.com" not in url.lower():
+                        continue
+                    # Skip search/listing pages
+                    if is_listing_page(title, url):
                         continue
                     if any(j.url == url for j in jobs):
                         continue

@@ -4,6 +4,7 @@ Uses TF-IDF cosine similarity, keyword overlap, and heuristic bonuses.
 """
 
 import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Set
 
@@ -171,6 +172,25 @@ def compute_tfidf_score(cv_text: str, job_text: str) -> float:
         return 0.0
 
 
+def compute_tfidf_scores_batch(cv_text: str, job_texts: List[str]) -> List[float]:
+    """Compute TF-IDF cosine scores for all jobs against one CV in a single fit/transform."""
+    if not cv_text.strip() or not job_texts:
+        return [0.0 for _ in job_texts]
+
+    try:
+        vectorizer = TfidfVectorizer(
+            stop_words="english",
+            max_features=5000,
+            ngram_range=(1, 2),
+        )
+        docs = [cv_text] + job_texts
+        tfidf_matrix = vectorizer.fit_transform(docs)
+        sims = cosine_similarity(tfidf_matrix[0:1], tfidf_matrix[1:])[0]
+        return [min(100, float(sim) * 100 * 2) for sim in sims]
+    except Exception:
+        return [0.0 for _ in job_texts]
+
+
 def compute_role_type_bonus(job: JobPosting, target_types: List[str]) -> float:
     """Bonus if job type matches target role types."""
     if not target_types:
@@ -261,15 +281,17 @@ def match_cv_to_jobs(
     cv_skills_set = set(s.lower() for s in cv.skills)
     results = []
 
-    for job in jobs:
-        job_text = f"{job.title} {job.description} {' '.join(job.tags)}".strip()
+    job_texts = [f"{job.title} {job.description} {' '.join(job.tags)}".strip() for job in jobs]
+    tfidf_scores = compute_tfidf_scores_batch(cv.raw_text, job_texts)
+
+    def _score_one(index: int, job: JobPosting, job_text: str) -> MatchResult:
         job_skills = extract_job_skills(job_text)
 
         # 1. Keyword overlap score (weight: 40%)
         kw_score, matched, missing = compute_keyword_score(cv_skills_set, job_skills)
 
         # 2. TF-IDF similarity (weight: 30%)
-        tfidf_score = compute_tfidf_score(cv.raw_text, job_text)
+        tfidf_score = tfidf_scores[index] if index < len(tfidf_scores) else 0.0
 
         # 3. Role type bonus (weight: flat bonus)
         role_bonus = compute_role_type_bonus(job, target_types)
@@ -280,8 +302,6 @@ def match_cv_to_jobs(
         # 5. German language penalty
         lang_penalty, warnings = compute_language_penalty(job, current_german_level)
 
-        # Composite score
-        # Base: 40% keyword + 30% TF-IDF + 20% fuzzy title match + 10% base
         title_match = fuzz.token_set_ratio(
             " ".join(target_types + cv.skills[:5]),
             job.title,
@@ -291,29 +311,35 @@ def match_cv_to_jobs(
             kw_score * 0.40
             + tfidf_score * 0.30
             + title_match * 0.20
-            + 10  # base score
+            + 10
             + role_bonus
             + loc_bonus
             + lang_penalty
         )
+        overall = max(0, min(100, overall))
 
-        overall = max(0, min(100, overall))  # Clamp to 0–100
-
-        results.append(
-            MatchResult(
-                job=job,
-                overall_score=overall,
-                keyword_score=kw_score,
-                tfidf_score=tfidf_score,
-                role_type_bonus=role_bonus,
-                location_bonus=loc_bonus,
-                language_penalty=lang_penalty,
-                confidence=get_confidence_label(overall),
-                matched_skills=matched,
-                missing_skills=missing,
-                warnings=warnings,
-            )
+        return MatchResult(
+            job=job,
+            overall_score=overall,
+            keyword_score=kw_score,
+            tfidf_score=tfidf_score,
+            role_type_bonus=role_bonus,
+            location_bonus=loc_bonus,
+            language_penalty=lang_penalty,
+            confidence=get_confidence_label(overall),
+            matched_skills=matched,
+            missing_skills=missing,
+            warnings=warnings,
         )
+
+    workers = min(16, max(1, len(jobs)))
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        future_to_idx = {
+            pool.submit(_score_one, idx, job, job_texts[idx]): idx
+            for idx, job in enumerate(jobs)
+        }
+        for future in as_completed(future_to_idx):
+            results.append(future.result())
 
     # Sort by overall score descending
     results.sort(key=lambda r: r.overall_score, reverse=True)

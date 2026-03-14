@@ -5,10 +5,11 @@ A Python toolkit that analyzes your CV PDFs for ATS (Applicant Tracking System) 
 ## Features
 
 - **ATS Compatibility Checker** — 14 automated checks: text parsability, images, tables, fonts, special characters, section headings, contact info, file size, page count, text order, keyword density, hyperlinks, PDF validity, header/footer analysis
-- **Multi-Source Job Scraping** — Scrapes from Arbeitnow, Google Jobs, LinkedIn, Indeed, StepStone, XING, and Jobteaser
+- **Internet-Wide Job Discovery** — Scrapes Arbeitnow/Adzuna/RemoteOK, major boards, OVGU/JobTeaser, and company career portals via multi-engine search
+- **Parallel Scraping Pipeline** — Source-level + city-level concurrency with retry/backoff and URL verification workers for faster runs
 - **CV ↔ Job Matching** — TF-IDF cosine similarity + keyword overlap + heuristic bonuses (role type, location, language requirements)
 - **Skills Gap Analysis** — Identifies skills frequently requested in jobs but missing from your CV
-- **HTML Dashboard** — Beautiful dark-themed report with sortable tables, city filters, and interactive tabs
+- **HTML Dashboard** — Includes separate Fresh, Thesis, Interesting (DS/ML/Engineering), and Precious opportunity sections
 - **Incremental Analysis** — Only re-analyzes changed/new PDFs; caches job results for 24 hours
 
 ## Quick Start
@@ -43,7 +44,7 @@ python scripts/main.py scan
 This runs the complete pipeline:
 1. Parses and analyzes all PDFs in `cvs/`
 2. Runs 14 ATS compatibility checks
-3. Scrapes jobs from 7 sources across Berlin, Wolfsburg, and Leipzig
+3. Scrapes jobs from multiple boards + company/university portals across configured cities
 4. Matches your CV against all jobs and scores acceptance likelihood
 5. Generates an HTML dashboard in `reports/`
 6. Opens the report in your browser
@@ -123,7 +124,8 @@ ATSchecker/
 │       ├── indeed.py           # Indeed Germany (requests)
 │       ├── stepstone.py        # StepStone (Selenium)
 │       ├── xing.py             # XING (Selenium + Google fallback)
-│       └── jobteaser.py        # Jobteaser (Selenium + Google fallback)
+│       ├── jobteaser.py        # Jobteaser with OVGU/campus-focused variants
+│       └── company_portals.py  # Company + university portal discovery
 ├── config.yaml                 # Configuration
 ├── requirements.txt
 └── README.md

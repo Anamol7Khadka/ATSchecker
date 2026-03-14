@@ -251,7 +251,11 @@
     <div class="card-header">
         <div class="card-title">Job Listings</div>
         {% if all_jobs %}
-        <span class="status-badge status-ok">{{ all_jobs|length }} total jobs</span>
+        <div class="header-metrics">
+            <span class="status-badge status-ok">{{ all_jobs|length }} total jobs</span>
+            <span class="status-badge status-none">Avg quality {{ quality_summary.average_score }}</span>
+            <span class="status-badge status-ok">{{ quality_summary.actionable_links }} verified links</span>
+        </div>
         {% endif %}
     </div>
 
@@ -264,8 +268,14 @@
         <button class="tab" onclick="switchTab('fresh', this)">
             &#128293; Fresh (24h) <span class="tab-badge tab-badge-green">{{ fresh_count }}</span>
         </button>
+        <button class="tab" onclick="switchTab('interesting', this)">
+            &#128161; Interesting DS/ML/Engg <span class="tab-badge tab-badge-orange">{{ interesting_count }}</span>
+        </button>
         <button class="tab" onclick="switchTab('thesis', this)">
             &#127891; Master Thesis AI/ML <span class="tab-badge tab-badge-purple">{{ thesis_jobs|length }}</span>
+        </button>
+        <button class="tab" onclick="switchTab('precious', this)">
+            &#11088; Precious Opportunities <span class="tab-badge tab-badge-red">{{ precious_count }}</span>
         </button>
     </div>
 
@@ -283,8 +293,14 @@
             <option value="{{ source|lower }}">{{ source }}</option>
             {% endfor %}
         </select>
+        <select id="group-by" onchange="setGroupBy(this.value)">
+            {% for value, label in group_options %}
+            <option value="{{ value }}" {{ 'selected' if selected_group_by == value else '' }}>{{ label }}</option>
+            {% endfor %}
+        </select>
         <input type="text" id="filter-search" placeholder="Search title, company..." oninput="filterJobs()">
     </div>
+    <div class="filter-hint">Filters apply to the active tab only. Default grouping is match tier so high-value jobs surface first.</div>
 
     <!-- All Jobs Tab -->
     <div id="tab-all" class="tab-content active">
@@ -292,41 +308,54 @@
             <table class="job-table" id="table-all">
                 <thead>
                     <tr>
-                        <th>#</th>
-                        <th>Title</th>
-                        <th>Company</th>
-                        <th>Location</th>
-                        <th>Source</th>
-                        <th>Posted</th>
-                        <th>Match</th>
+                        <th onclick="sortTable('table-all', 'row', 'number', 'asc')">#</th>
+                        <th onclick="sortTable('table-all', 'title', 'text', 'asc')">Title</th>
+                        <th onclick="sortTable('table-all', 'company', 'text', 'asc')">Company</th>
+                        <th onclick="sortTable('table-all', 'city', 'text', 'asc')">Location</th>
+                        <th onclick="sortTable('table-all', 'source', 'text', 'asc')">Source</th>
+                        <th onclick="sortTable('table-all', 'posted', 'date', 'desc')">Posted</th>
+                        <th onclick="sortTable('table-all', 'match', 'number', 'desc')">Match</th>
                         <th>Action</th>
                     </tr>
                 </thead>
-                <tbody>
-                {% set row_idx = 0 %}
-                {% for date, jobs in grouped_jobs.items() %}
-                    <tr style="background:#e9ecef;font-weight:600;">
-                        <td colspan="8" style="text-align:left;font-size:1.02rem; color:#444; border-top:2px solid #d1d5db;">{{ date }}</td>
+                {% set ns = namespace(row=0) %}
+                {% for group in grouped_jobs %}
+                <tbody class="group-body" data-group-label="{{ group.label|lower }}">
+                    <tr class="group-row">
+                        <td colspan="8">{{ group.label }}</td>
                     </tr>
-                    {% for job_id, job in jobs %}
-                        {% set row_idx = row_idx + 1 %}
+                    {% for job_id, job in group.jobs %}
+                        {% set ns.row = ns.row + 1 %}
+                        {% set match = match_lookup.get(job.url) %}
+                        {% set opp = opportunity_lookup.get(job.url, {}) %}
+                        {% set quality = job.quality or {} %}
                         <tr class="job-row"
+                            data-row="{{ ns.row }}"
                             data-city="{{ job.location|lower }}"
                             data-source="{{ job.source|lower }}"
                             data-title="{{ job.title|lower }}"
-                            data-company="{{ job.company|lower }}">
-                            <td>{{ row_idx }}</td>
+                            data-company="{{ job.company|lower }}"
+                            data-posted="{{ job.posted_date or '' }}"
+                            data-match="{{ '%.3f'|format(match.overall_score if match else 0) }}"
+                            data-quality="{{ quality.get('score', 0) }}"
+                            data-opportunity="{{ opp.get('score', 0) }}"
+                            data-interesting="{{ 'true' if opp.get('interesting') else 'false' }}"
+                            data-precious="{{ 'true' if opp.get('precious') else 'false' }}">
+                            <td>{{ ns.row }}</td>
                             <td>
                                 <a href="/job/{{ job_id }}" class="job-title-link">{{ job.title[:65] }}</a>
                                 {% if is_within_24h(job) %} <span class="badge badge-new">NEW</span>{% endif %}
+                                {% if opp.get('interesting') %} <span class="badge badge-interesting">INTERESTING</span>{% endif %}
+                                {% if opp.get('precious') %} <span class="badge badge-precious">PRECIOUS</span>{% endif %}
+                                {% if quality.get('score') %}<span class="badge badge-quality">Q{{ quality.get('score') }}</span>{% endif %}
                             </td>
                             <td>{{ job.company[:35] }}</td>
                             <td>{{ job.location[:25] }}</td>
                             <td><span class="badge badge-source">{{ job.source }}</span></td>
                             <td style="white-space:nowrap;font-size:0.78rem;">{{ job.posted_date|format_date if job.posted_date else 'N/A' }}</td>
                             <td>
-                                {% if match_lookup.get(job.url) %}
-                                {% set score = match_lookup[job.url].overall_score %}
+                                {% if match %}
+                                {% set score = match.overall_score %}
                                 <div class="match-bar">
                                     <div class="match-bar-fill {{ 'match-high' if score >= 55 else 'match-medium' if score >= 35 else 'match-low' }}"
                                          style="width:{{ [score, 100]|min }}%"></div>
@@ -335,12 +364,15 @@
                                 {% else %}-{% endif %}
                             </td>
                             <td>
-                                <a href="/job/{{ job_id }}" class="btn btn-purple btn-sm">Analyze</a>
+                                <div class="table-actions">
+                                    <a href="{{ job.url }}" target="_blank" rel="noopener" class="btn btn-secondary btn-sm">Open</a>
+                                    <a href="/job/{{ job_id }}" class="btn btn-purple btn-sm">Analyze</a>
+                                </div>
                             </td>
                         </tr>
                     {% endfor %}
-                {% endfor %}
                 </tbody>
+                {% endfor %}
             </table>
         </div>
     </div>
@@ -351,8 +383,8 @@
             <table class="job-table" id="table-fresh">
                 <thead>
                     <tr>
-                        <th>#</th><th>Title</th><th>Company</th><th>Location</th>
-                        <th>Source</th><th>Posted</th><th>Match</th><th>Action</th>
+                        <th onclick="sortTable('table-fresh', 'row', 'number', 'asc')">#</th><th onclick="sortTable('table-fresh', 'title', 'text', 'asc')">Title</th><th onclick="sortTable('table-fresh', 'company', 'text', 'asc')">Company</th><th onclick="sortTable('table-fresh', 'city', 'text', 'asc')">Location</th>
+                        <th onclick="sortTable('table-fresh', 'source', 'text', 'asc')">Source</th><th onclick="sortTable('table-fresh', 'posted', 'date', 'desc')">Posted</th><th onclick="sortTable('table-fresh', 'match', 'number', 'desc')">Match</th><th>Action</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -360,22 +392,38 @@
                     {% for job_id, job in regular_jobs %}
                     {% if is_within_24h(job) %}
                     {% set ns.idx = ns.idx + 1 %}
-                    <tr>
+                    {% set match = match_lookup.get(job.url) %}
+                    {% set opp = opportunity_lookup.get(job.url, {}) %}
+                    {% set quality = job.quality or {} %}
+                    <tr class="job-row"
+                        data-row="{{ ns.idx }}"
+                        data-city="{{ job.location|lower }}"
+                        data-source="{{ job.source|lower }}"
+                        data-title="{{ job.title|lower }}"
+                        data-company="{{ job.company|lower }}"
+                        data-posted="{{ job.posted_date or '' }}"
+                        data-match="{{ '%.3f'|format(match.overall_score if match else 0) }}"
+                        data-quality="{{ quality.get('score', 0) }}"
+                        data-opportunity="{{ opp.get('score', 0) }}"
+                        data-interesting="{{ 'true' if opp.get('interesting') else 'false' }}"
+                        data-precious="{{ 'true' if opp.get('precious') else 'false' }}">
                         <td>{{ ns.idx }}</td>
                         <td>
                             <a href="/job/{{ job_id }}" class="job-title-link">{{ job.title[:65] }}</a>
                             <span class="badge badge-new">NEW</span>
+                            {% if opp.get('interesting') %}<span class="badge badge-interesting">INTERESTING</span>{% endif %}
+                            {% if opp.get('precious') %}<span class="badge badge-precious">PRECIOUS</span>{% endif %}
                         </td>
                         <td>{{ job.company[:35] }}</td>
                         <td>{{ job.location[:25] }}</td>
                         <td><span class="badge badge-source">{{ job.source }}</span></td>
                         <td style="white-space:nowrap;font-size:0.78rem;">{{ job.posted_date|format_date if job.posted_date else 'N/A' }}</td>
                         <td>
-                            {% if match_lookup.get(job.url) %}
-                            {{ "%.0f"|format(match_lookup[job.url].overall_score) }}%
+                            {% if match %}
+                            {{ "%.0f"|format(match.overall_score) }}%
                             {% else %}-{% endif %}
                         </td>
-                        <td><a href="/job/{{ job_id }}" class="btn btn-purple btn-sm">Analyze</a></td>
+                        <td><div class="table-actions"><a href="{{ job.url }}" target="_blank" rel="noopener" class="btn btn-secondary btn-sm">Open</a><a href="/job/{{ job_id }}" class="btn btn-purple btn-sm">Analyze</a></div></td>
                     </tr>
                     {% endif %}
                     {% endfor %}
@@ -396,29 +444,44 @@
             <table class="job-table" id="table-thesis">
                 <thead>
                     <tr>
-                        <th>#</th><th>Title</th><th>Company</th><th>Location</th>
-                        <th>Source</th><th>Posted</th><th>Match</th><th>Action</th>
+                        <th onclick="sortTable('table-thesis', 'row', 'number', 'asc')">#</th><th onclick="sortTable('table-thesis', 'title', 'text', 'asc')">Title</th><th onclick="sortTable('table-thesis', 'company', 'text', 'asc')">Company</th><th onclick="sortTable('table-thesis', 'city', 'text', 'asc')">Location</th>
+                        <th onclick="sortTable('table-thesis', 'source', 'text', 'asc')">Source</th><th onclick="sortTable('table-thesis', 'posted', 'date', 'desc')">Posted</th><th onclick="sortTable('table-thesis', 'match', 'number', 'desc')">Match</th><th>Action</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for job_id, job in thesis_jobs %}
-                    <tr>
+                    {% set match = match_lookup.get(job.url) %}
+                    {% set opp = opportunity_lookup.get(job.url, {}) %}
+                    {% set quality = job.quality or {} %}
+                    <tr class="job-row"
+                        data-row="{{ loop.index }}"
+                        data-city="{{ job.location|lower }}"
+                        data-source="{{ job.source|lower }}"
+                        data-title="{{ job.title|lower }}"
+                        data-company="{{ job.company|lower }}"
+                        data-posted="{{ job.posted_date or '' }}"
+                        data-match="{{ '%.3f'|format(match.overall_score if match else 0) }}"
+                        data-quality="{{ quality.get('score', 0) }}"
+                        data-opportunity="{{ opp.get('score', 0) }}"
+                        data-interesting="{{ 'true' if opp.get('interesting') else 'false' }}"
+                        data-precious="{{ 'true' if opp.get('precious') else 'false' }}">
                         <td>{{ loop.index }}</td>
                         <td>
                             <a href="/job/{{ job_id }}" class="job-title-link">{{ job.title[:65] }}</a>
                             {% if is_within_24h(job) %} <span class="badge badge-new">NEW</span>{% endif %}
                             <span class="badge badge-thesis">THESIS</span>
+                            {% if opp.get('precious') %}<span class="badge badge-precious">PRECIOUS</span>{% endif %}
                         </td>
                         <td>{{ job.company[:35] }}</td>
                         <td>{{ job.location[:25] }}</td>
                         <td><span class="badge badge-source">{{ job.source }}</span></td>
                         <td style="white-space:nowrap;font-size:0.78rem;">{{ job.posted_date|format_date if job.posted_date else 'N/A' }}</td>
                         <td>
-                            {% if match_lookup.get(job.url) %}
-                            {{ "%.0f"|format(match_lookup[job.url].overall_score) }}%
+                            {% if match %}
+                            {{ "%.0f"|format(match.overall_score) }}%
                             {% else %}-{% endif %}
                         </td>
-                        <td><a href="/job/{{ job_id }}" class="btn btn-purple btn-sm">Analyze</a></td>
+                        <td><div class="table-actions"><a href="{{ job.url }}" target="_blank" rel="noopener" class="btn btn-secondary btn-sm">Open</a><a href="/job/{{ job_id }}" class="btn btn-purple btn-sm">Analyze</a></div></td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -427,6 +490,124 @@
             <div class="empty-state">
                 <h3>No AI/ML Master Thesis postings found</h3>
                 <p>Thesis jobs are identified from all scraped sources automatically.</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Interesting Tab -->
+    <div id="tab-interesting" class="tab-content">
+        <div class="table-wrap">
+            <table class="job-table" id="table-interesting">
+                <thead>
+                    <tr>
+                        <th onclick="sortTable('table-interesting', 'row', 'number', 'asc')">#</th><th onclick="sortTable('table-interesting', 'title', 'text', 'asc')">Title</th><th onclick="sortTable('table-interesting', 'company', 'text', 'asc')">Company</th><th onclick="sortTable('table-interesting', 'city', 'text', 'asc')">Location</th>
+                        <th onclick="sortTable('table-interesting', 'source', 'text', 'asc')">Source</th><th onclick="sortTable('table-interesting', 'posted', 'date', 'desc')">Posted</th><th onclick="sortTable('table-interesting', 'match', 'number', 'desc')">Match</th><th>Why</th><th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for job_id, job in interesting_jobs %}
+                    {% set opp = opportunity_lookup.get(job.url, {}) %}
+                    {% set match = match_lookup.get(job.url) %}
+                    {% set quality = job.quality or {} %}
+                    <tr class="job-row"
+                        data-row="{{ loop.index }}"
+                        data-city="{{ job.location|lower }}"
+                        data-source="{{ job.source|lower }}"
+                        data-title="{{ job.title|lower }}"
+                        data-company="{{ job.company|lower }}"
+                        data-posted="{{ job.posted_date or '' }}"
+                        data-match="{{ '%.3f'|format(match.overall_score if match else 0) }}"
+                        data-quality="{{ quality.get('score', 0) }}"
+                        data-opportunity="{{ opp.get('score', 0) }}"
+                        data-interesting="{{ 'true' if opp.get('interesting') else 'false' }}"
+                        data-precious="{{ 'true' if opp.get('precious') else 'false' }}">
+                        <td>{{ loop.index }}</td>
+                        <td>
+                            <a href="/job/{{ job_id }}" class="job-title-link">{{ job.title[:65] }}</a>
+                            {% if is_within_24h(job) %} <span class="badge badge-new">NEW</span>{% endif %}
+                            <span class="badge badge-interesting">INTERESTING</span>
+                            {% if opp.get('precious') %}<span class="badge badge-precious">PRECIOUS</span>{% endif %}
+                            {% if quality.get('score') %}<span class="badge badge-quality">Q{{ quality.get('score') }}</span>{% endif %}
+                        </td>
+                        <td>{{ job.company[:35] }}</td>
+                        <td>{{ job.location[:25] }}</td>
+                        <td><span class="badge badge-source">{{ job.source }}</span></td>
+                        <td style="white-space:nowrap;font-size:0.78rem;">{{ job.posted_date|format_date if job.posted_date else 'N/A' }}</td>
+                        <td>
+                            {% if match %}
+                            {{ "%.0f"|format(match.overall_score) }}%
+                            {% else %}-{% endif %}
+                        </td>
+                        <td class="reason-cell" title="{{ '; '.join(opp.get('reasons', [])) if opp.get('reasons') else 'No reason available' }}">{{ ', '.join(opp.get('reasons', [])[:3]) if opp.get('reasons') else '-' }}</td>
+                        <td><div class="table-actions"><a href="{{ job.url }}" target="_blank" rel="noopener" class="btn btn-secondary btn-sm">Open</a><a href="/job/{{ job_id }}" class="btn btn-purple btn-sm">Analyze</a></div></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% if not interesting_jobs %}
+            <div class="empty-state">
+                <h3>No interesting DS/ML/Engineering jobs yet</h3>
+                <p>Run a fresh scrape to discover broader opportunities beyond direct match score.</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Precious Tab -->
+    <div id="tab-precious" class="tab-content">
+        <div class="table-wrap">
+            <table class="job-table" id="table-precious">
+                <thead>
+                    <tr>
+                        <th onclick="sortTable('table-precious', 'row', 'number', 'asc')">#</th><th onclick="sortTable('table-precious', 'title', 'text', 'asc')">Title</th><th onclick="sortTable('table-precious', 'company', 'text', 'asc')">Company</th><th onclick="sortTable('table-precious', 'city', 'text', 'asc')">Location</th>
+                        <th onclick="sortTable('table-precious', 'source', 'text', 'asc')">Source</th><th onclick="sortTable('table-precious', 'posted', 'date', 'desc')">Posted</th><th onclick="sortTable('table-precious', 'match', 'number', 'desc')">Match</th><th>Why Precious</th><th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for job_id, job in precious_jobs %}
+                    {% set opp = opportunity_lookup.get(job.url, {}) %}
+                    {% set match = match_lookup.get(job.url) %}
+                    {% set quality = job.quality or {} %}
+                    <tr class="job-row"
+                        data-row="{{ loop.index }}"
+                        data-city="{{ job.location|lower }}"
+                        data-source="{{ job.source|lower }}"
+                        data-title="{{ job.title|lower }}"
+                        data-company="{{ job.company|lower }}"
+                        data-posted="{{ job.posted_date or '' }}"
+                        data-match="{{ '%.3f'|format(match.overall_score if match else 0) }}"
+                        data-quality="{{ quality.get('score', 0) }}"
+                        data-opportunity="{{ opp.get('score', 0) }}"
+                        data-interesting="{{ 'true' if opp.get('interesting') else 'false' }}"
+                        data-precious="{{ 'true' if opp.get('precious') else 'false' }}">
+                        <td>{{ loop.index }}</td>
+                        <td>
+                            <a href="/job/{{ job_id }}" class="job-title-link">{{ job.title[:65] }}</a>
+                            {% if is_within_24h(job) %} <span class="badge badge-new">NEW</span>{% endif %}
+                            {% if opp.get('thesis') %}<span class="badge badge-thesis">THESIS</span>{% endif %}
+                            <span class="badge badge-precious">PRECIOUS</span>
+                            {% if quality.get('score') %}<span class="badge badge-quality">Q{{ quality.get('score') }}</span>{% endif %}
+                        </td>
+                        <td>{{ job.company[:35] }}</td>
+                        <td>{{ job.location[:25] }}</td>
+                        <td><span class="badge badge-source">{{ job.source }}</span></td>
+                        <td style="white-space:nowrap;font-size:0.78rem;">{{ job.posted_date|format_date if job.posted_date else 'N/A' }}</td>
+                        <td>
+                            {% if match %}
+                            {{ "%.0f"|format(match.overall_score) }}%
+                            {% else %}-{% endif %}
+                        </td>
+                        <td class="reason-cell" title="{{ '; '.join(opp.get('reasons', [])) if opp.get('reasons') else 'No reason available' }}">{{ ', '.join(opp.get('reasons', [])[:3]) if opp.get('reasons') else '-' }}</td>
+                        <td><div class="table-actions"><a href="{{ job.url }}" target="_blank" rel="noopener" class="btn btn-secondary btn-sm">Open</a><a href="/job/{{ job_id }}" class="btn btn-purple btn-sm">Analyze</a></div></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% if not precious_jobs %}
+            <div class="empty-state">
+                <h3>No precious opportunities identified yet</h3>
+                <p>Precious jobs include thesis/research and high-impact DS/ML/Engineering openings.</p>
             </div>
             {% endif %}
         </div>

@@ -41,6 +41,39 @@ _CHROME_VERSION = _detect_chrome_version()
 class JobteaserScraper(BaseScraper):
     name = "Jobteaser"
 
+    def _build_query_variants(self, city: str, job_type: str, keyword: str) -> List[str]:
+        base = [f"{job_type} {keyword}"]
+        city_l = city.lower()
+
+        # OVGU/campus boost for Magdeburg and university-focused discovery.
+        if city_l == "magdeburg" or self.config.get("enable_university_discovery", True):
+            base.extend(
+                [
+                    f"{job_type} {keyword} OVGU",
+                    f"{job_type} {keyword} Otto von Guericke",
+                    f"{job_type} {keyword} university campus",
+                ]
+            )
+
+        if "thesis" in job_type.lower() or "master" in job_type.lower() or "arbeit" in job_type.lower():
+            base.extend(
+                [
+                    f"{job_type} {keyword} research",
+                    f"{job_type} {keyword} lab",
+                ]
+            )
+
+        # Keep order but remove duplicates.
+        dedup = []
+        seen = set()
+        for q in base:
+            ql = q.lower()
+            if ql in seen:
+                continue
+            seen.add(ql)
+            dedup.append(q)
+        return dedup[:5]
+
     def _get_driver(self):
         options = uc.ChromeOptions()
         if self.headless:
@@ -89,85 +122,92 @@ class JobteaserScraper(BaseScraper):
 
             for jt in job_types[:6]:
                 for kw in keywords[:6]:
-                    query = f"{jt} {kw}"
-                    url = (
-                        f"https://www.jobteaser.com/en/job-offers"
-                        f"?query={quote_plus(query)}"
-                        f"&location={quote_plus(city + ', Germany')}"
-                    )
-                    driver.get(url)
-                    time.sleep(self.delay + 2)
+                    for query in self._build_query_variants(city, jt, kw):
+                        url = (
+                            f"https://www.jobteaser.com/en/job-offers"
+                            f"?query={quote_plus(query)}"
+                            f"&location={quote_plus(city + ', Germany')}"
+                        )
+                        driver.get(url)
+                        time.sleep(self.delay + 2)
 
-                    # Check for login/SSO wall
-                    page_source = driver.page_source.lower()
-                    if "sign in" in page_source or "log in" in page_source:
-                        if "job" not in page_source[:1000]:
-                            print(f"[{self.name}] SSO/login required, using DuckDuckGo fallback.")
-                            break
-
-                    # Scroll to load content
-                    for _ in range(2):
-                        driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                        time.sleep(1)
-
-                    # Find job cards
-                    card_selectors = [
-                        "article",
-                        "div[class*='job-offer']",
-                        "li[class*='job']",
-                        "a[class*='offer']",
-                        "div[class*='JobCard']",
-                    ]
-
-                    cards = []
-                    for sel in card_selectors:
-                        try:
-                            cards = driver.find_elements(By.CSS_SELECTOR, sel)
-                            if cards:
+                        # Check for login/SSO wall
+                        page_source = driver.page_source.lower()
+                        if "sign in" in page_source or "log in" in page_source:
+                            if "job" not in page_source[:1000]:
+                                print(f"[{self.name}] SSO/login required, using DuckDuckGo fallback.")
                                 break
-                        except Exception:
-                            continue
 
-                    for card in cards[: self.max_results]:
-                        try:
-                            title = ""
-                            for t_sel in ["h2", "h3", "a", "span"]:
+                        # Scroll to load content
+                        for _ in range(2):
+                            driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+                            time.sleep(1)
+
+                        # Find job cards
+                        card_selectors = [
+                            "article",
+                            "div[class*='job-offer']",
+                            "li[class*='job']",
+                            "a[class*='offer']",
+                            "div[class*='JobCard']",
+                        ]
+
+                        cards = []
+                        for sel in card_selectors:
+                            try:
+                                cards = driver.find_elements(By.CSS_SELECTOR, sel)
+                                if cards:
+                                    break
+                            except Exception:
+                                continue
+
+                        for card in cards[: self.max_results]:
+                            try:
+                                title = ""
+                                for t_sel in ["h2", "h3", "a", "span"]:
+                                    try:
+                                        el = card.find_element(By.CSS_SELECTOR, t_sel)
+                                        text = el.text.strip()
+                                        if text and len(text) > 5:
+                                            title = text
+                                            break
+                                    except Exception:
+                                        continue
+
+                                job_url = ""
                                 try:
-                                    el = card.find_element(By.CSS_SELECTOR, t_sel)
-                                    text = el.text.strip()
-                                    if text and len(text) > 5:
-                                        title = text
-                                        break
+                                    link = card.find_element(By.CSS_SELECTOR, "a")
+                                    job_url = link.get_attribute("href") or ""
                                 except Exception:
+                                    pass
+
+                                if not title:
                                     continue
 
-                            job_url = ""
-                            try:
-                                link = card.find_element(By.CSS_SELECTOR, "a")
-                                job_url = link.get_attribute("href") or ""
-                            except Exception:
-                                pass
+                                if job_url and any(j.url == job_url for j in jobs):
+                                    continue
 
-                            if not title:
-                                continue
+                                source = self.name
+                                if "ovgu" in query.lower() or city.lower() == "magdeburg":
+                                    source = "Jobteaser→OVGU"
 
-                            if job_url and any(j.url == job_url for j in jobs):
-                                continue
-
-                            jobs.append(
-                                JobPosting(
-                                    title=title,
-                                    company="",
-                                    location=city,
-                                    url=job_url or url,
-                                    source=self.name,
-                                    job_type=jt,
-                                    posted_date=datetime.now().isoformat(),
+                                jobs.append(
+                                    JobPosting(
+                                        title=title,
+                                        company="",
+                                        location=city,
+                                        url=job_url or url,
+                                        source=source,
+                                        job_type=jt,
+                                        posted_date=datetime.now().isoformat(),
+                                    )
                                 )
-                            )
 
-                        except Exception:
-                            continue
+                            except Exception:
+                                continue
+
+                    if len(jobs) >= self.max_results:
+                        break
 
                 if len(jobs) >= self.max_results:
                     break
@@ -191,8 +231,8 @@ class JobteaserScraper(BaseScraper):
 
         for jt in job_types[:6]:
             for kw in keywords[:6]:
-                # DDG doesn't support site: operator — use jobteaser.com as keyword
-                query = f"{jt} {kw} {city} Germany jobteaser.com"
+                # DDG doesn't reliably enforce site:, so include domain + OVGU terms.
+                query = f"{jt} {kw} {city} Germany jobteaser.com ovgu thesis campus"
 
                 try:
                     with DDGS() as ddgs:
@@ -222,7 +262,7 @@ class JobteaserScraper(BaseScraper):
                             company="(via Jobteaser/DDG)",
                             location=city,
                             url=url,
-                            source="DDG→Jobteaser",
+                            source="DDG→Jobteaser/OVGU",
                             job_type=jt,
                             posted_date=datetime.now().isoformat(),
                         )

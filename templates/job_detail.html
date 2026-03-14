@@ -14,10 +14,21 @@
         {% if is_recent %}<span class="badge badge-new">Posted within 24h</span>{% endif %}
         {% if is_thesis %}<span class="badge badge-thesis">Master Thesis</span>{% endif %}
     </div>
+    <div class="job-quality-strip">
+        {% if quality_info.get('score') %}<span class="badge badge-quality">Quality {{ quality_info.get('score') }}</span>{% endif %}
+        {% if quality_info.get('url_status') in ['alive', 'redirected'] %}<span class="badge badge-new">Verified Link</span>{% endif %}
+        {% if opportunity_info.get('interesting') %}<span class="badge badge-interesting">Interesting</span>{% endif %}
+        {% if opportunity_info.get('precious') %}<span class="badge badge-precious">Precious</span>{% endif %}
+    </div>
+    {% if opportunity_info.get('reasons') %}
+    <p class="status-msg" style="margin-top:10px;">{{ ', '.join(opportunity_info.get('reasons', [])) }}</p>
+    {% endif %}
     {% if job.url %}
     <a href="{{ job.url }}" target="_blank" rel="noopener" class="btn btn-secondary btn-sm" style="margin-top:12px;">
         Open Original Posting &#8599;
     </a>
+    {% elif quality_info.get('url_status') %}
+    <div class="status-msg error" style="margin-top:12px;">Original posting is currently marked {{ quality_info.get('url_status') }}.</div>
     {% endif %}
 </div>
 

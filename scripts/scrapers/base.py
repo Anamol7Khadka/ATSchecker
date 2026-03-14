@@ -6,7 +6,7 @@ import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse, parse_qs
 
 
@@ -90,6 +90,7 @@ class JobPosting:
     salary: Optional[str] = None
     tags: List[str] = field(default_factory=list)
     scraped_at: str = field(default_factory=lambda: datetime.now().isoformat())
+    quality: Dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         return {
@@ -104,6 +105,7 @@ class JobPosting:
             "salary": self.salary,
             "tags": self.tags,
             "scraped_at": self.scraped_at,
+            "quality": self.quality,
         }
 
     @classmethod
@@ -140,6 +142,13 @@ class BaseScraper(ABC):
             if keywords:
                 parts.extend(keywords)  # Use all keywords
         return " ".join(parts)
+
+    def log(self, message: str):
+        logger = self.config.get("_logger") if isinstance(self.config, dict) else None
+        if callable(logger):
+            logger(message)
+            return
+        print(message)
 
     def __repr__(self):
         return f"<{self.__class__.__name__} scraper>"

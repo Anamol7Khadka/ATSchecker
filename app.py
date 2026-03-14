@@ -27,9 +27,9 @@ sys.path.insert(0, SCRIPT_DIR)
 from cv_parser import parse_cv
 from ats_checker import run_ats_check
 from job_scraper import load_config, scrape_all_jobs, get_cached_jobs, deduplicate_jobs
+from quality_gate import parse_posted_date, summarize_quality_jobs
 from scrapers.base import is_listing_page
 from cv_job_matcher import match_cv_to_jobs, analyze_skills_gap
-from datetime import datetime
 
 
 app = Flask(__name__)
@@ -43,28 +43,10 @@ def format_date(value):
     if not value:
         return "N/A"
     try:
-        from datetime import datetime
-        import dateutil.parser
-        if isinstance(value, int) or (isinstance(value, str) and value.isdigit()):
-            # Assume Unix timestamp (seconds)
-            dt = datetime.fromtimestamp(int(value))
-        elif isinstance(value, str):
-            try:
-                # Try ISO 8601 and common web formats
-                dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
-            except Exception:
-                try:
-                    # Try RFC 2822, RFC 1123, etc.
-                    dt = dateutil.parser.parse(value)
-                except Exception:
-                    try:
-                        # Try parsing as float timestamp string
-                        dt = datetime.fromtimestamp(float(value))
-                    except Exception:
-                        print(f"[format_date] Could not parse posted_date: {value}", file=sys.stderr)
-                        return str(value)
-        else:
-            dt = value
+        dt = parse_posted_date(value)
+        if not dt:
+            print(f"[format_date] Could not parse posted_date: {value}", file=sys.stderr)
+            return str(value)
         return dt.strftime("%Y %m %d %H:%M:%S")
     except Exception as e:
         print(f"[format_date] Error parsing posted_date: {value} ({e})", file=sys.stderr)
@@ -94,6 +76,46 @@ THESIS_MARKERS = [
     "thesis nlp", "thesis data science", "thesis computer vision",
     "thesis reinforcement learning", "diploma thesis", "diplomarbeit",
     "forschungsarbeit", "research thesis",
+]
+
+DEFAULT_ROLE_KEYWORDS = [
+    "data science",
+    "machine learning",
+    "ml engineer",
+    "ai engineer",
+    "data engineer",
+    "deep learning",
+    "nlp",
+    "computer vision",
+    "software engineer",
+    "backend engineer",
+    "thesis",
+    "research",
+]
+
+DEFAULT_PRESTIGE_COMPANIES = [
+    "bosch",
+    "sap",
+    "siemens",
+    "bmw",
+    "mercedes",
+    "porsche",
+    "volkswagen",
+    "infineon",
+    "zalando",
+    "celonis",
+    "microsoft",
+    "google",
+    "amazon",
+    "apple",
+    "meta",
+    "nvidia",
+]
+
+DEFAULT_LOCATION_KEYWORDS = [
+    "magdeburg",
+    "ovgu",
+    "remote",
 ]
 
 
@@ -129,6 +151,188 @@ def is_within_24h(job):
     if any(w in pd for w in ["today", "heute", "1 day", "1 tag"]):
         return True
     return False
+
+
+def _to_lower_list(values, fallback):
+    source = values if isinstance(values, list) and values else fallback
+    return [str(v).strip().lower() for v in source if str(v).strip()]
+
+
+def _get_opportunity_config(config: dict):
+    opportunity_cfg = config.get("opportunity", {}) if config else {}
+    return {
+        "precious_min_score": int(opportunity_cfg.get("precious_min_score", 5)),
+        "recency_hours": int(opportunity_cfg.get("recency_hours", 72)),
+        "role_keywords": _to_lower_list(
+            opportunity_cfg.get("role_keywords", []),
+            DEFAULT_ROLE_KEYWORDS,
+        ),
+        "prestige_companies": _to_lower_list(
+            opportunity_cfg.get("prestige_companies", []),
+            DEFAULT_PRESTIGE_COMPANIES,
+        ),
+        "location_keywords": _to_lower_list(
+            opportunity_cfg.get("location_keywords", []),
+            DEFAULT_LOCATION_KEYWORDS,
+        ),
+    }
+
+
+def _job_text(job):
+    parts = [
+        job.title,
+        job.description,
+        job.company,
+        job.location,
+        job.source,
+        job.job_type,
+        " ".join(job.tags or []),
+    ]
+    return " ".join(str(p) for p in parts if p).lower()
+
+
+def _is_recent_within_hours(job, hours: int):
+    if hours <= 24:
+        return is_within_24h(job)
+
+    val = job.posted_date
+    if not val:
+        return False
+
+    try:
+        if isinstance(val, int) or (isinstance(val, str) and val.isdigit()):
+            dt = datetime.fromtimestamp(int(val))
+        elif isinstance(val, str):
+            dt = datetime.fromisoformat(val.replace("Z", "+00:00"))
+        else:
+            dt = val
+        return (datetime.now() - dt.replace(tzinfo=None)) < timedelta(hours=hours)
+    except Exception:
+        return is_within_24h(job)
+
+
+def classify_opportunity(job, config: dict):
+    cfg = _get_opportunity_config(config)
+    text = _job_text(job)
+
+    score = 0
+    reasons = []
+
+    is_thesis = is_thesis_job(job)
+    if is_thesis:
+        score += 5
+        reasons.append("Thesis/Research")
+
+    role_hit = any(k in text for k in cfg["role_keywords"])
+    if role_hit:
+        score += 3
+        reasons.append("DS/ML/Engineering role")
+
+    company_text = str(job.company or "").lower()
+    if any(c in company_text for c in cfg["prestige_companies"]):
+        score += 3
+        reasons.append("High-impact company")
+
+    if _is_recent_within_hours(job, cfg["recency_hours"]):
+        score += 2
+        reasons.append("Recently posted")
+
+    loc_text = f"{job.location} {job.title}".lower()
+    if any(k in loc_text for k in cfg["location_keywords"]):
+        score += 1
+        reasons.append("Priority location")
+
+    is_precious = is_thesis or score >= cfg["precious_min_score"]
+
+    return {
+        "score": score,
+        "reasons": reasons,
+        "thesis": is_thesis,
+        "interesting": role_hit,
+        "precious": is_precious,
+    }
+
+
+def _match_score(job, match_lookup: dict) -> float:
+    match = match_lookup.get(job.url)
+    return float(match.overall_score if match else 0)
+
+
+def _quality_score(job) -> int:
+    return int((job.quality or {}).get("score", 0))
+
+
+def _posted_timestamp(job) -> float:
+    dt = parse_posted_date(job.posted_date)
+    return dt.timestamp() if dt else 0.0
+
+
+def _display_sort_key(job, match_lookup: dict, opportunity_lookup: dict):
+    opportunity = opportunity_lookup.get(job.url, {})
+    recent_rank = 0 if is_within_24h(job) else 1
+    return (
+        recent_rank,
+        -_match_score(job, match_lookup),
+        -int(opportunity.get("score", 0)),
+        -_quality_score(job),
+        -_posted_timestamp(job),
+        str(job.title or "").lower(),
+    )
+
+
+def _group_label(job, group_by: str, match_lookup: dict, opportunity_lookup: dict):
+    if group_by == "company":
+        return job.company or "Unknown Company"
+    if group_by == "source":
+        return job.source or "Unknown Source"
+    if group_by == "match-tier":
+        match_score = _match_score(job, match_lookup)
+        opportunity = opportunity_lookup.get(job.url, {})
+        if match_score >= 80:
+            return "Excellent Match (80%+)"
+        if match_score >= 60:
+            return "Strong Match (60-79%)"
+        if match_score >= 40:
+            return "Potential Match (40-59%)"
+        if opportunity.get("precious") or opportunity.get("interesting"):
+            return "Discovery Candidates"
+        return "Needs Review"
+
+    dt = parse_posted_date(job.posted_date)
+    return dt.strftime("%Y %m %d") if dt else "N/A"
+
+
+def _group_sort_key(label: str, group_by: str):
+    if group_by == "date":
+        dt = parse_posted_date(label)
+        return (0, -(dt.timestamp() if dt else 0))
+    if group_by == "match-tier":
+        order = {
+            "Excellent Match (80%+)": 0,
+            "Strong Match (60-79%)": 1,
+            "Potential Match (40-59%)": 2,
+            "Discovery Candidates": 3,
+            "Needs Review": 4,
+        }
+        return (0, order.get(label, 99))
+    return (0, label.lower())
+
+
+def build_grouped_jobs(indexed_jobs, group_by: str, match_lookup: dict, opportunity_lookup: dict):
+    groups = {}
+    for job_id, job in indexed_jobs:
+        label = _group_label(job, group_by, match_lookup, opportunity_lookup)
+        groups.setdefault(label, []).append((job_id, job))
+
+    grouped = []
+    for label, jobs in groups.items():
+        grouped.append({
+            "label": label,
+            "jobs": sorted(jobs, key=lambda item: _display_sort_key(item[1], match_lookup, opportunity_lookup)),
+        })
+
+    grouped.sort(key=lambda item: _group_sort_key(item["label"], group_by))
+    return grouped
 
 
 def run_ats_on_cv(pdf_path):
@@ -181,108 +385,71 @@ def inject_globals():
 def dashboard():
     config = get_config()
     cv_folder = get_cv_folder()
+    group_options = [
+        ("match-tier", "Match Tier"),
+        ("date", "Date"),
+        ("company", "Company"),
+        ("source", "Source"),
+    ]
+    selected_group_by = request.args.get(
+        "group",
+        config.get("dashboard", {}).get("default_group_by", "match-tier"),
+    )
+    if selected_group_by not in {key for key, _ in group_options}:
+        selected_group_by = config.get("dashboard", {}).get("default_group_by", "match-tier")
+
     cv_files = []
     if os.path.exists(cv_folder):
         cv_files = [f for f in os.listdir(cv_folder) if f.lower().endswith(".pdf")]
 
     all_indexed = list(enumerate(state["jobs"]))
     match_lookup = {m.job.url: m for m in state["matches"]}
+    opportunity_lookup = {
+        j.url: classify_opportunity(j, config)
+        for _, j in all_indexed
+    }
 
-    # Group jobs by date (yyyy mm dd)
-    from collections import defaultdict
-    import dateutil.parser
-
-    def get_date_str(job):
-        # Use format_date logic to get date part only
-        val = job.posted_date
-        if not val:
-            return "N/A"
-        try:
-            if isinstance(val, int) or (isinstance(val, str) and val.isdigit()):
-                dt = datetime.fromtimestamp(int(val))
-            elif isinstance(val, str):
-                try:
-                    dt = datetime.fromisoformat(val.replace("Z", "+00:00"))
-                except Exception:
-                    try:
-                        dt = dateutil.parser.parse(val)
-                    except Exception:
-                        try:
-                            dt = datetime.fromtimestamp(float(val))
-                        except Exception:
-                            return str(val)
-            else:
-                dt = val
-            return dt.strftime("%Y %m %d")
-        except Exception:
-            return str(val)
-
-    def get_time_str(job):
-        val = job.posted_date
-        if not val:
-            return "00:00:00"
-        try:
-            if isinstance(val, int) or (isinstance(val, str) and val.isdigit()):
-                dt = datetime.fromtimestamp(int(val))
-            elif isinstance(val, str):
-                try:
-                    dt = datetime.fromisoformat(val.replace("Z", "+00:00"))
-                except Exception:
-                    try:
-                        dt = dateutil.parser.parse(val)
-                    except Exception:
-                        try:
-                            dt = datetime.fromtimestamp(float(val))
-                        except Exception:
-                            return "00:00:00"
-            else:
-                dt = val
-            return dt.strftime("%H:%M:%S")
-        except Exception:
-            return "00:00:00"
-
-    # Only regular jobs (not thesis)
     regular = [(i, j) for i, j in all_indexed if not is_thesis_job(j)]
-    # Group by date
-    grouped = defaultdict(list)
-    for idx, job in regular:
-        date_str = get_date_str(job)
-        grouped[date_str].append((idx, job))
+    regular.sort(key=lambda item: _display_sort_key(item[1], match_lookup, opportunity_lookup))
+    grouped_jobs = build_grouped_jobs(regular, selected_group_by, match_lookup, opportunity_lookup)
 
-    # Sort jobs within each date: by time (desc), then match (desc)
-
-    def sort_within_date_by_match(item):
-        idx, job = item
-        m = match_lookup.get(job.url)
-        score = m.overall_score if m else 0
-        return -score
-
-    grouped_jobs = {}
-    for date_str, jobs in grouped.items():
-        grouped_jobs[date_str] = sorted(jobs, key=sort_within_date_by_match)
-
-    # Sort dates descending
-    grouped_jobs = dict(sorted(grouped_jobs.items(), reverse=True))
-
-    # Thesis jobs (keep old logic)
     thesis = [(i, j) for i, j in all_indexed if is_thesis_job(j)]
+
+    interesting = [
+        (i, j)
+        for i, j in all_indexed
+        if opportunity_lookup.get(j.url, {}).get("interesting", False)
+    ]
+
+    precious = [
+        (i, j)
+        for i, j in all_indexed
+        if opportunity_lookup.get(j.url, {}).get("precious", False)
+    ]
+
     def sort_key(item):
         _, job = item
-        recent = 0 if is_within_24h(job) else 1
-        m = match_lookup.get(job.url)
-        score = -(m.overall_score if m else 0)
-        return (recent, score)
+        return _display_sort_key(job, match_lookup, opportunity_lookup)
+
     thesis.sort(key=sort_key)
+    interesting.sort(key=sort_key)
+    precious.sort(key=sort_key)
 
     fresh_count = sum(1 for _, j in all_indexed if is_within_24h(j) and not is_thesis_job(j))
+    interesting_count = len(interesting)
+    precious_count = len(precious)
     sources = sorted(set(j.source for j in state["jobs"] if j.source))
+    quality_summary = summarize_quality_jobs(state["jobs"])
 
     return render_template(
         "dashboard.html",
         ats_reports=state["ats_reports"],
         regular_jobs=regular,
         thesis_jobs=thesis,
+        interesting_jobs=interesting,
+        precious_jobs=precious,
         match_lookup=match_lookup,
+        opportunity_lookup=opportunity_lookup,
         cv_data=state["cv_data"],
         cv_files=cv_files,
         gap_analysis=state["gap_analysis"],
@@ -290,8 +457,13 @@ def dashboard():
         all_jobs=state["jobs"],
         is_within_24h=is_within_24h,
         fresh_count=fresh_count,
+        interesting_count=interesting_count,
+        precious_count=precious_count,
         sources=sources,
         grouped_jobs=grouped_jobs,
+        group_options=group_options,
+        selected_group_by=selected_group_by,
+        quality_summary=quality_summary,
     )
 
 
@@ -310,6 +482,8 @@ def job_detail(job_id):
         job=job,
         job_id=job_id,
         match_info=match_info,
+        opportunity_info=classify_opportunity(job, get_config()),
+        quality_info=job.quality or {},
         cv_data=state["cv_data"],
         is_recent=is_within_24h(job),
         is_thesis=is_thesis_job(job),
@@ -415,8 +589,8 @@ def start_scrape():
             # Filter out search listing pages
             if is_listing_page(job.title, job.url):
                 continue
-            # Quick URL dedup against what's already in state
-            if not any(j.url == job.url for j in state["jobs"]):
+            url_key = (job.quality or {}).get("normalized_url") or job.url
+            if not any(((j.quality or {}).get("normalized_url") or j.url) == url_key for j in state["jobs"]):
                 state["jobs"].append(job)
 
 
@@ -466,21 +640,24 @@ def get_scrape_logs():
 @app.route("/api/jobs")
 def get_jobs_live():
     """Return current jobs list sorted: recent postings first, then by match score."""
+    config = get_config()
     match_lookup = {m.job.url: m for m in state["matches"]}
     indexed = list(enumerate(state["jobs"]))
+    quality_summary = summarize_quality_jobs(state["jobs"])
 
     def _sort_key(item):
         _, job = item
+        opportunity = classify_opportunity(job, config)
         recent = 0 if is_within_24h(job) else 1
-        m = match_lookup.get(job.url)
-        score = -(m.overall_score if m else 0)
-        return (recent, score)
+        score = -_match_score(job, match_lookup)
+        return (recent, -int(opportunity.get("score", 0)), -_quality_score(job), score, -_posted_timestamp(job))
 
     indexed.sort(key=_sort_key)
 
     jobs_data = []
     for orig_idx, job in indexed:
         m = match_lookup.get(job.url)
+        opportunity = classify_opportunity(job, config)
         jobs_data.append({
             "id": orig_idx,
             "title": job.title[:65],
@@ -490,11 +667,20 @@ def get_jobs_live():
             "posted_date": str(job.posted_date or "N/A"),
             "match": round(m.overall_score, 1) if m else 0,
             "recent": is_within_24h(job),
+            "interesting": opportunity.get("interesting", False),
+            "precious": opportunity.get("precious", False),
+            "opportunity_score": opportunity.get("score", 0),
+            "opportunity_reasons": opportunity.get("reasons", []),
+            "quality_score": _quality_score(job),
+            "quality_bucket": (job.quality or {}).get("bucket", "low"),
+            "quality_flags": (job.quality or {}).get("flags", []),
+            "url_status": (job.quality or {}).get("url_status", "unknown"),
         })
     return jsonify({
         "jobs": jobs_data,
         "total": len(jobs_data),
         "scraping": state["scrape_status"]["running"],
+        "quality": quality_summary,
     })
 
 

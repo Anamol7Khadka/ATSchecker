@@ -77,16 +77,73 @@ cv_skills:
 scraping:
   max_results_per_source: 100
   request_delay_seconds: 2
+  # Additional random delay (seconds) added to each request cycle.
+  request_jitter_seconds: 1.25
   selenium_headless: true
   cache_expiry_hours: 24
   max_keywords_per_city: 6
   max_job_types: 6
   max_pages: 5
+  # Retry and adaptive cooldown policy for unstable/blocked sources.
+  max_retries_per_task: 3
+  retry_backoff_base_seconds: 1.0
+  retry_backoff_max_seconds: 20
+  domain_cooldown_seconds: 45
+  enable_circuit_breaker: true
+  circuit_breaker_engines:
+    - duckduckgo
+    - google
+  rate_limit_cooldown_seconds: 120
+  rate_limit_max_429_consecutive: 2
+  circuit_breaker_max_duration_seconds: 300
+
+  # Parallelism controls. Increase to use more CPU/network.
+  parallel_scrapers: true
+  max_scraper_workers: 6
+  parallel_cities: true
+  max_city_workers_per_scraper: 4
+  url_verify_workers: 50
+
+  # Search/discovery breadth controls.
+  search_engines:
+    - duckduckgo
+    - google
+  enable_company_portal_discovery: true
+  enable_university_discovery: true
+
+  # User-agent rotation pool used by HTTP-style requests.
+  rotate_user_agents: true
+  user_agents:
+    - "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36"
+    - "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+    - "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
+    - "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) Gecko/20100101 Firefox/124.0"
+
+  # Known company targets and university/research portals for deep discovery.
+  company_domains:
+    - bosch.com
+    - sap.com
+    - siemens.com
+    - bmwgroup.com
+    - volkswagen-group.com
+    - zalando.com
+    - celonis.com
+    - infineon.com
+    - deutschebahn.com
+    - mercedes-benz.com
+  university_portals:
+    - ovgu.de
+    - jobteaser.com
+    - daad.de
+    - dlr.de
+    - fraunhofer.de
+
   # Priority order for scrapers (first = highest priority)
   scraper_priority:
     - arbeitnow
     - adzuna
     - remoteok
+    - company_portals
     - google_jobs
     - linkedin
     - indeed
@@ -97,6 +154,58 @@ scraping:
   # Adzuna API (free — register at https://developer.adzuna.com/)
   # adzuna_app_id: "YOUR_APP_ID"
   # adzuna_app_key: "YOUR_APP_KEY"
+
+# Opportunity discovery tuning (dashboard/report sections)
+opportunity:
+  # Any score >= precious_min_score is marked "Precious".
+  precious_min_score: 5
+  recency_hours: 72
+  role_keywords:
+    - data science
+    - machine learning
+    - ml engineer
+    - ai engineer
+    - data engineer
+    - deep learning
+    - nlp
+    - computer vision
+    - software engineer
+    - backend engineer
+    - thesis
+    - research
+  prestige_companies:
+    - bosch
+    - sap
+    - siemens
+    - bmw
+    - mercedes
+    - porsche
+    - volkswagen
+    - infineon
+    - zalando
+    - celonis
+    - microsoft
+    - google
+    - amazon
+    - apple
+    - meta
+    - nvidia
+  location_keywords:
+    - magdeburg
+    - ovgu
+    - remote
+
+quality:
+  mode: strict
+  batch_min_score: 20
+  final_min_score: 55
+  min_title_chars: 8
+  max_title_chars: 160
+  min_description_chars: 50
+  drop_uncertain_urls: true
+
+dashboard:
+  default_group_by: match-tier
 
 # ATS checker settings
 ats:

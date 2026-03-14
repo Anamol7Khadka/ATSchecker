@@ -2,12 +2,21 @@
    ATSchecker — Dashboard JavaScript
    ─────────────────────────────────────────────────────────── */
 
+const SORT_STORAGE_PREFIX = 'ats-sort:';
+
+function getActiveTabName() {
+    const active = document.querySelector('.tab-content.active');
+    return active ? active.id.replace('tab-', '') : 'all';
+}
+
 // ─── Tab Switching ───
 function switchTab(tabName, el) {
     document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
     document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
     document.getElementById('tab-' + tabName).classList.add('active');
     el.classList.add('active');
+    applyStoredSort(tabName);
+    filterJobs();
 }
 
 // ─── Filter Jobs ───
@@ -15,12 +24,15 @@ function filterJobs() {
     const city = document.getElementById('filter-city').value.toLowerCase();
     const source = document.getElementById('filter-source').value.toLowerCase();
     const search = document.getElementById('filter-search').value.toLowerCase();
+    const activeTab = document.querySelector('.tab-content.active');
 
-    document.querySelectorAll('.job-row').forEach(row => {
+    if (!activeTab) return;
+
+    activeTab.querySelectorAll('.job-row').forEach(row => {
         const rCity = (row.dataset.city || '').toLowerCase();
         const rSource = (row.dataset.source || '').toLowerCase();
-        const rTitle = (row.dataset.title || '');
-        const rCompany = (row.dataset.company || '');
+        const rTitle = (row.dataset.title || '').toLowerCase();
+        const rCompany = (row.dataset.company || '').toLowerCase();
 
         let show = true;
         if (city && !rCity.includes(city)) show = false;
@@ -28,29 +40,150 @@ function filterJobs() {
         if (search && !rTitle.includes(search) && !rCompany.includes(search)) show = false;
         row.style.display = show ? '' : 'none';
     });
+
+    activeTab.querySelectorAll('.group-body').forEach(groupBody => {
+        const hasVisibleRows = Array.from(groupBody.querySelectorAll('.job-row')).some(row => row.style.display !== 'none');
+        groupBody.style.display = hasVisibleRows ? '' : 'none';
+    });
 }
 
 // ─── Sort Table ───
-function sortTable(tableId, colIdx) {
+function setGroupBy(value) {
+    const url = new URL(window.location.href);
+    url.searchParams.set('group', value);
+    window.location.assign(url.toString());
+}
+
+function parseDateValue(value) {
+    if (!value) return 0;
+    const text = String(value).trim();
+    if (/^\d+$/.test(text)) {
+        let ts = parseInt(text, 10);
+        if (text.length === 13) ts = Math.floor(ts / 1000);
+        return ts * 1000;
+    }
+    const parsed = Date.parse(text);
+    return Number.isNaN(parsed) ? 0 : parsed;
+}
+
+function compareDatasetValues(a, b, type, dir) {
+    if (type === 'number') {
+        const left = parseFloat(a || '0');
+        const right = parseFloat(b || '0');
+        return dir === 'asc' ? left - right : right - left;
+    }
+    if (type === 'date') {
+        const left = parseDateValue(a);
+        const right = parseDateValue(b);
+        return dir === 'asc' ? left - right : right - left;
+    }
+    const left = String(a || '');
+    const right = String(b || '');
+    return dir === 'asc' ? left.localeCompare(right) : right.localeCompare(left);
+}
+
+function updateSortIndicators(table, field, dir) {
+    table.querySelectorAll('th').forEach(th => {
+        th.classList.remove('sorted-asc', 'sorted-desc');
+    });
+    table.querySelectorAll('th').forEach(th => {
+        const onclick = th.getAttribute('onclick') || '';
+        if (onclick.includes("'" + field + "'")) {
+            th.classList.add(dir === 'asc' ? 'sorted-asc' : 'sorted-desc');
+        }
+    });
+}
+
+function renumberTable(table) {
+    if (!table) return;
+    let index = 1;
+    table.querySelectorAll('tbody.group-body').forEach(body => {
+        body.querySelectorAll('tr.job-row').forEach(row => {
+            const firstCell = row.cells[0];
+            if (!firstCell) return;
+            firstCell.textContent = index;
+            row.dataset.row = String(index);
+            index += 1;
+        });
+    });
+
+    if (index === 1) {
+        table.querySelectorAll('tbody tr.job-row').forEach(row => {
+            const firstCell = row.cells[0];
+            if (!firstCell) return;
+            firstCell.textContent = index;
+            row.dataset.row = String(index);
+            index += 1;
+        });
+    }
+}
+
+function saveSortState(tabName, field, type, dir) {
+    localStorage.setItem(SORT_STORAGE_PREFIX + tabName, JSON.stringify({ field, type, dir }));
+}
+
+function loadSortState(tabName) {
+    try {
+        return JSON.parse(localStorage.getItem(SORT_STORAGE_PREFIX + tabName) || 'null');
+    } catch (_) {
+        return null;
+    }
+}
+
+function applySort(tableId, field, type, dir, persist) {
     const table = document.getElementById(tableId);
     if (!table) return;
-    const tbody = table.querySelector('tbody');
-    const rows = Array.from(tbody.querySelectorAll('tr'));
 
-    const dir = table.dataset.sortDir === 'asc' ? 'desc' : 'asc';
+    const groupedBodies = Array.from(table.querySelectorAll('tbody.group-body'));
+
+    const sortRows = function (container, rows) {
+        rows.sort((a, b) => compareDatasetValues(a.dataset[field], b.dataset[field], type, dir));
+        rows.forEach(row => container.appendChild(row));
+    };
+
+    if (groupedBodies.length) {
+        groupedBodies.forEach(body => {
+            sortRows(body, Array.from(body.querySelectorAll('tr.job-row')));
+        });
+    } else {
+        const tbody = table.querySelector('tbody');
+        if (!tbody) return;
+        sortRows(tbody, Array.from(tbody.querySelectorAll('tr.job-row')));
+    }
+
+    table.dataset.sortField = field;
     table.dataset.sortDir = dir;
 
-    rows.sort((a, b) => {
-        let aVal = (a.cells[colIdx]?.textContent || '').trim();
-        let bVal = (b.cells[colIdx]?.textContent || '').trim();
-        const aNum = parseFloat(aVal);
-        const bNum = parseFloat(bVal);
-        if (!isNaN(aNum) && !isNaN(bNum)) {
-            return dir === 'asc' ? aNum - bNum : bNum - aNum;
-        }
-        return dir === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
-    });
-    rows.forEach(r => tbody.appendChild(r));
+    if (persist) {
+        saveSortState(tableId.replace('table-', ''), field, type, dir);
+    }
+    renumberTable(table);
+    updateSortIndicators(table, field, dir);
+    filterJobs();
+}
+
+function applyStoredSort(tabName) {
+    const tableId = 'table-' + tabName;
+    const table = document.getElementById(tableId);
+    if (!table) return;
+
+    const state = loadSortState(tabName);
+    if (state && state.field && state.type && state.dir) {
+        applySort(tableId, state.field, state.type, state.dir, false);
+        return;
+    }
+    updateSortIndicators(table, table.dataset.sortField || '', table.dataset.sortDir || '');
+}
+
+function sortTable(tableId, field, type, defaultDir) {
+    const table = document.getElementById(tableId);
+    if (!table) return;
+
+    let dir = defaultDir || 'desc';
+    if (table.dataset.sortField === field) {
+        dir = table.dataset.sortDir === 'asc' ? 'desc' : 'asc';
+    }
+    applySort(tableId, field, type, dir, true);
 }
 
 // ─── Add City from Dropdown ───
@@ -169,6 +302,10 @@ function startScrape(useCache) {
 
 // ─── Upload PDF ───
 document.addEventListener('DOMContentLoaded', function () {
+    formatAllPostedDates();
+    applyStoredSort(getActiveTabName());
+    filterJobs();
+
     const form = document.getElementById('upload-form');
     if (form) {
         form.addEventListener('submit', function (e) {
@@ -304,6 +441,9 @@ function _renderLiveBatch(jobs, fullReplace) {
         var j = jobs[i];
         var badges = '<span class="badge badge-source">' + escHtml(j.source) + '</span>';
         if (j.recent) badges += ' <span class="badge badge-new">NEW</span>';
+        if (j.interesting) badges += ' <span class="badge badge-interesting">INTERESTING</span>';
+        if (j.precious) badges += ' <span class="badge badge-precious">PRECIOUS</span>';
+        if (j.quality_score) badges += ' <span class="badge badge-quality">Q' + escHtml(j.quality_score) + '</span>';
         var matchCell = j.match > 0
             ? '<span style="color:var(--accent-green);font-weight:600;">' + j.match + '%</span>'
             : '<span style="color:var(--text-muted);">—</span>';
@@ -390,7 +530,7 @@ function safeQuit() {
         .then(() => {
             document.body.innerHTML = '<div style="text-align:center;padding:60px;color:#aaa;font-family:sans-serif;">' +
                 '<h1>Server stopped</h1><p>The port has been freed. You can close this tab.</p>' +
-                '<p style="margin-top:20px;font-size:0.85rem;color:#888;">To restart: <code>cd ATSchecker &amp;&amp; source venv/bin/activate &amp;&amp; python app.py</code></p></div>';
+                '<p style="margin-top:20px;font-size:0.85rem;color:#888;">To restart: <code>python app.py</code></p></div>';
         })
         .catch(() => {
             document.body.innerHTML = '<div style="text-align:center;padding:60px;color:#aaa;font-family:sans-serif;">' +

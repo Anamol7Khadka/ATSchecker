@@ -17,6 +17,7 @@ import threading
 from datetime import datetime, timedelta
 from pathlib import Path
 
+
 from flask import Flask, render_template, jsonify, request
 
 # Add scripts/ to Python path
@@ -28,9 +29,48 @@ from ats_checker import run_ats_check
 from job_scraper import load_config, scrape_all_jobs, get_cached_jobs, deduplicate_jobs
 from scrapers.base import is_listing_page
 from cv_job_matcher import match_cv_to_jobs, analyze_skills_gap
+from datetime import datetime
+
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024  # 16 MB upload limit
+
+# ─── Jinja2 Filter for Date Formatting ─────────────────────────────
+
+def format_date(value):
+    """Format a date string, timestamp, or datetime object as yyyy mm dd HH:MM:SS. Logs unparseable values for debugging."""
+    import sys
+    if not value:
+        return "N/A"
+    try:
+        from datetime import datetime
+        import dateutil.parser
+        if isinstance(value, int) or (isinstance(value, str) and value.isdigit()):
+            # Assume Unix timestamp (seconds)
+            dt = datetime.fromtimestamp(int(value))
+        elif isinstance(value, str):
+            try:
+                # Try ISO 8601 and common web formats
+                dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            except Exception:
+                try:
+                    # Try RFC 2822, RFC 1123, etc.
+                    dt = dateutil.parser.parse(value)
+                except Exception:
+                    try:
+                        # Try parsing as float timestamp string
+                        dt = datetime.fromtimestamp(float(value))
+                    except Exception:
+                        print(f"[format_date] Could not parse posted_date: {value}", file=sys.stderr)
+                        return str(value)
+        else:
+            dt = value
+        return dt.strftime("%Y %m %d %H:%M:%S")
+    except Exception as e:
+        print(f"[format_date] Error parsing posted_date: {value} ({e})", file=sys.stderr)
+        return str(value)
+
+app.jinja_env.filters['format_date'] = format_date
 
 PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
 
@@ -148,17 +188,90 @@ def dashboard():
     all_indexed = list(enumerate(state["jobs"]))
     match_lookup = {m.job.url: m for m in state["matches"]}
 
-    regular = [(i, j) for i, j in all_indexed if not is_thesis_job(j)]
-    thesis = [(i, j) for i, j in all_indexed if is_thesis_job(j)]
+    # Group jobs by date (yyyy mm dd)
+    from collections import defaultdict
+    import dateutil.parser
 
+    def get_date_str(job):
+        # Use format_date logic to get date part only
+        val = job.posted_date
+        if not val:
+            return "N/A"
+        try:
+            if isinstance(val, int) or (isinstance(val, str) and val.isdigit()):
+                dt = datetime.fromtimestamp(int(val))
+            elif isinstance(val, str):
+                try:
+                    dt = datetime.fromisoformat(val.replace("Z", "+00:00"))
+                except Exception:
+                    try:
+                        dt = dateutil.parser.parse(val)
+                    except Exception:
+                        try:
+                            dt = datetime.fromtimestamp(float(val))
+                        except Exception:
+                            return str(val)
+            else:
+                dt = val
+            return dt.strftime("%Y %m %d")
+        except Exception:
+            return str(val)
+
+    def get_time_str(job):
+        val = job.posted_date
+        if not val:
+            return "00:00:00"
+        try:
+            if isinstance(val, int) or (isinstance(val, str) and val.isdigit()):
+                dt = datetime.fromtimestamp(int(val))
+            elif isinstance(val, str):
+                try:
+                    dt = datetime.fromisoformat(val.replace("Z", "+00:00"))
+                except Exception:
+                    try:
+                        dt = dateutil.parser.parse(val)
+                    except Exception:
+                        try:
+                            dt = datetime.fromtimestamp(float(val))
+                        except Exception:
+                            return "00:00:00"
+            else:
+                dt = val
+            return dt.strftime("%H:%M:%S")
+        except Exception:
+            return "00:00:00"
+
+    # Only regular jobs (not thesis)
+    regular = [(i, j) for i, j in all_indexed if not is_thesis_job(j)]
+    # Group by date
+    grouped = defaultdict(list)
+    for idx, job in regular:
+        date_str = get_date_str(job)
+        grouped[date_str].append((idx, job))
+
+    # Sort jobs within each date: by time (desc), then match (desc)
+
+    def sort_within_date_by_match(item):
+        idx, job = item
+        m = match_lookup.get(job.url)
+        score = m.overall_score if m else 0
+        return -score
+
+    grouped_jobs = {}
+    for date_str, jobs in grouped.items():
+        grouped_jobs[date_str] = sorted(jobs, key=sort_within_date_by_match)
+
+    # Sort dates descending
+    grouped_jobs = dict(sorted(grouped_jobs.items(), reverse=True))
+
+    # Thesis jobs (keep old logic)
+    thesis = [(i, j) for i, j in all_indexed if is_thesis_job(j)]
     def sort_key(item):
         _, job = item
         recent = 0 if is_within_24h(job) else 1
         m = match_lookup.get(job.url)
         score = -(m.overall_score if m else 0)
         return (recent, score)
-
-    regular.sort(key=sort_key)
     thesis.sort(key=sort_key)
 
     fresh_count = sum(1 for _, j in all_indexed if is_within_24h(j) and not is_thesis_job(j))
@@ -178,6 +291,7 @@ def dashboard():
         is_within_24h=is_within_24h,
         fresh_count=fresh_count,
         sources=sources,
+        grouped_jobs=grouped_jobs,
     )
 
 
@@ -305,10 +419,12 @@ def start_scrape():
             if not any(j.url == job.url for j in state["jobs"]):
                 state["jobs"].append(job)
 
+
     def _scrape():
         state["scrape_status"] = {"running": True, "message": "Starting scrapers..."}
         state["scrape_logs"] = []
-        # Keep existing jobs — don't clear them
+        # Clear all previous jobs so only new jobs are shown
+        state["jobs"] = []
 
         try:
             config = get_config()

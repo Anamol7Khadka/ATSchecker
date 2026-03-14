@@ -79,6 +79,7 @@ cities:
   - Berlin
   - Wolfsburg
   - Leipzig
+  - Magdeburg
 
 # Job types
 job_types:

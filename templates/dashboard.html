@@ -255,46 +255,53 @@
                 <thead>
                     <tr>
                         <th>#</th>
-                        <th onclick="sortTable('table-all',1)">Title &#8693;</th>
-                        <th onclick="sortTable('table-all',2)">Company &#8693;</th>
-                        <th onclick="sortTable('table-all',3)">Location &#8693;</th>
-                        <th onclick="sortTable('table-all',4)">Source</th>
-                        <th onclick="sortTable('table-all',5)">Posted &#8693;</th>
-                        <th onclick="sortTable('table-all',6)">Match &#8693;</th>
+                        <th>Title</th>
+                        <th>Company</th>
+                        <th>Location</th>
+                        <th>Source</th>
+                        <th>Posted</th>
+                        <th>Match</th>
                         <th>Action</th>
                     </tr>
                 </thead>
                 <tbody>
-                    {% for job_id, job in regular_jobs %}
-                    <tr class="job-row"
-                        data-city="{{ job.location|lower }}"
-                        data-source="{{ job.source|lower }}"
-                        data-title="{{ job.title|lower }}"
-                        data-company="{{ job.company|lower }}">
-                        <td>{{ loop.index }}</td>
-                        <td>
-                            <a href="/job/{{ job_id }}" class="job-title-link">{{ job.title[:65] }}</a>
-                            {% if is_within_24h(job) %} <span class="badge badge-new">NEW</span>{% endif %}
-                        </td>
-                        <td>{{ job.company[:35] }}</td>
-                        <td>{{ job.location[:25] }}</td>
-                        <td><span class="badge badge-source">{{ job.source }}</span></td>
-                        <td style="white-space:nowrap;font-size:0.78rem;">{{ job.posted_date or 'N/A' }}</td>
-                        <td>
-                            {% if match_lookup.get(job.url) %}
-                            {% set score = match_lookup[job.url].overall_score %}
-                            <div class="match-bar">
-                                <div class="match-bar-fill {{ 'match-high' if score >= 55 else 'match-medium' if score >= 35 else 'match-low' }}"
-                                     style="width:{{ [score, 100]|min }}%"></div>
-                            </div>
-                            {{ "%.0f"|format(score) }}%
-                            {% else %}-{% endif %}
-                        </td>
-                        <td>
-                            <a href="/job/{{ job_id }}" class="btn btn-purple btn-sm">Analyze</a>
-                        </td>
+                {% set row_idx = 0 %}
+                {% for date, jobs in grouped_jobs.items() %}
+                    <tr style="background:#e9ecef;font-weight:600;">
+                        <td colspan="8" style="text-align:left;font-size:1.02rem; color:#444; border-top:2px solid #d1d5db;">{{ date }}</td>
                     </tr>
+                    {% for job_id, job in jobs %}
+                        {% set row_idx = row_idx + 1 %}
+                        <tr class="job-row"
+                            data-city="{{ job.location|lower }}"
+                            data-source="{{ job.source|lower }}"
+                            data-title="{{ job.title|lower }}"
+                            data-company="{{ job.company|lower }}">
+                            <td>{{ row_idx }}</td>
+                            <td>
+                                <a href="/job/{{ job_id }}" class="job-title-link">{{ job.title[:65] }}</a>
+                                {% if is_within_24h(job) %} <span class="badge badge-new">NEW</span>{% endif %}
+                            </td>
+                            <td>{{ job.company[:35] }}</td>
+                            <td>{{ job.location[:25] }}</td>
+                            <td><span class="badge badge-source">{{ job.source }}</span></td>
+                            <td style="white-space:nowrap;font-size:0.78rem;">{{ job.posted_date|format_date if job.posted_date else 'N/A' }}</td>
+                            <td>
+                                {% if match_lookup.get(job.url) %}
+                                {% set score = match_lookup[job.url].overall_score %}
+                                <div class="match-bar">
+                                    <div class="match-bar-fill {{ 'match-high' if score >= 55 else 'match-medium' if score >= 35 else 'match-low' }}"
+                                         style="width:{{ [score, 100]|min }}%"></div>
+                                </div>
+                                {{ "%.0f"|format(score) }}%
+                                {% else %}-{% endif %}
+                            </td>
+                            <td>
+                                <a href="/job/{{ job_id }}" class="btn btn-purple btn-sm">Analyze</a>
+                            </td>
+                        </tr>
                     {% endfor %}
+                {% endfor %}
                 </tbody>
             </table>
         </div>
@@ -324,7 +331,7 @@
                         <td>{{ job.company[:35] }}</td>
                         <td>{{ job.location[:25] }}</td>
                         <td><span class="badge badge-source">{{ job.source }}</span></td>
-                        <td style="white-space:nowrap;font-size:0.78rem;">{{ job.posted_date or 'N/A' }}</td>
+                        <td style="white-space:nowrap;font-size:0.78rem;">{{ job.posted_date|format_date if job.posted_date else 'N/A' }}</td>
                         <td>
                             {% if match_lookup.get(job.url) %}
                             {{ "%.0f"|format(match_lookup[job.url].overall_score) }}%
@@ -367,7 +374,7 @@
                         <td>{{ job.company[:35] }}</td>
                         <td>{{ job.location[:25] }}</td>
                         <td><span class="badge badge-source">{{ job.source }}</span></td>
-                        <td style="white-space:nowrap;font-size:0.78rem;">{{ job.posted_date or 'N/A' }}</td>
+                        <td style="white-space:nowrap;font-size:0.78rem;">{{ job.posted_date|format_date if job.posted_date else 'N/A' }}</td>
                         <td>
                             {% if match_lookup.get(job.url) %}
                             {{ "%.0f"|format(match_lookup[job.url].overall_score) }}%

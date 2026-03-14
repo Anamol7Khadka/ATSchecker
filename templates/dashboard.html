@@ -82,6 +82,44 @@
     </div>
 </div>
 
+    <script>
+    // Format posted_date cells in the All Jobs table (and others if needed)
+    function formatDateString(dateStr) {
+        // If already formatted (yyyy mm dd HH:MM:SS), return as is
+        if (/^\d{4} \d{2} \d{2} \d{2}:\d{2}:\d{2}$/.test(dateStr)) return dateStr;
+        // If looks like a Unix timestamp (10+ digits)
+        if (/^\d{10,}$/.test(dateStr)) {
+            let ts = parseInt(dateStr, 10);
+            if (dateStr.length === 13) ts = Math.floor(ts / 1000); // ms to s
+            let d = new Date(ts * 1000);
+            return d.getFullYear() + ' ' + String(d.getMonth()+1).padStart(2,'0') + ' ' + String(d.getDate()).padStart(2,'0') +
+                ' ' + String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0') + ':' + String(d.getSeconds()).padStart(2,'0');
+        }
+        // Try to parse ISO or other date strings
+        let d = new Date(dateStr);
+        if (!isNaN(d.getTime())) {
+            return d.getFullYear() + ' ' + String(d.getMonth()+1).padStart(2,'0') + ' ' + String(d.getDate()).padStart(2,'0') +
+                ' ' + String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0') + ':' + String(d.getSeconds()).padStart(2,'0');
+        }
+        return dateStr;
+    }
+
+    function formatAllPostedDates() {
+        document.querySelectorAll('table.job-table td').forEach(function(td) {
+            if (td.style && td.style.whiteSpace === 'nowrap' && td.innerText.match(/\d/)) {
+                let orig = td.innerText.trim();
+                let formatted = formatDateString(orig);
+                if (orig !== formatted) td.innerText = formatted;
+            }
+        });
+    }
+
+    // Run after DOM is loaded
+    document.addEventListener('DOMContentLoaded', function() {
+        formatAllPostedDates();
+    });
+    </script>
+
 <!-- Status Messages -->
 <div id="compile-status" class="status-msg" style="display:none;"></div>
 <div id="scrape-status" class="status-msg" style="display:none;"></div>

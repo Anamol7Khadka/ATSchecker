@@ -387,7 +387,7 @@ function pollStatus(task) {
                             note.innerHTML = '<span style="color:var(--accent-green);font-weight:600;">Scraping complete \u2014 ' + d.total + ' jobs found.</span> ' +
                                 '<button class="btn btn-sm btn-success" onclick="analyzeJobs()" style="margin-left:10px;">\u2728 Sort &amp; Analyze</button>' +
                                 '<button class="btn btn-sm btn-secondary" onclick="location.reload()" style="margin-left:6px;">Refresh page</button>';
-                        }).catch(() => {});
+                        }).catch(() => { });
                     } else {
                         // Compile or cache-load — safe to reload
                         setTimeout(() => location.reload(), 1500);
@@ -415,7 +415,7 @@ function pollLogs() {
                     logEl.scrollTop = logEl.scrollHeight;
                 }
             })
-            .catch(() => {});
+            .catch(() => { });
     };
 
     render();
@@ -474,7 +474,7 @@ function pollLiveJobs() {
             .then(function (data) {
                 _renderLiveBatch(data.jobs, false);
             })
-            .catch(function () {});
+            .catch(function () { });
     };
 
     render();

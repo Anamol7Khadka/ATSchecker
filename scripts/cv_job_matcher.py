@@ -4,10 +4,12 @@ Uses TF-IDF cosine similarity, keyword overlap, and heuristic bonuses.
 """
 
 import re
+import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Set
 
+import yaml
 from rapidfuzz import fuzz
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
@@ -59,44 +61,35 @@ class SkillsGapAnalysis:
 # Keyword extraction
 # ─────────────────────────────────────────────────────────────
 
-# Common tech skills/tools to look for in job descriptions
-TECH_KEYWORDS = {
-    "python", "java", "javascript", "typescript", "c++", "c#", "go", "rust",
-    "ruby", "scala", "kotlin", "swift", "r", "sql", "bash", "shell",
-    "react", "angular", "vue", "node.js", "django", "flask", "fastapi",
-    "spring", "spring boot", ".net", "express",
-    "pandas", "numpy", "scikit-learn", "pytorch", "tensorflow", "keras",
-    "spark", "pyspark", "hadoop", "kafka", "airflow", "dbt", "flink",
-    "elasticsearch", "solr", "redis", "mongodb", "postgresql", "mysql",
-    "cassandra", "dynamodb", "neo4j",
-    "aws", "azure", "gcp", "docker", "kubernetes", "terraform",
-    "ci/cd", "jenkins", "gitlab", "github actions",
-    "linux", "git", "maven", "gradle",
-    "machine learning", "deep learning", "nlp", "computer vision",
-    "data engineering", "data science", "etl", "elt",
-    "rest api", "graphql", "grpc", "microservices",
-    "agile", "scrum", "jira",
-    "langchain", "llm", "rag", "protobuf",
-}
-
-# German language requirement patterns
-GERMAN_PATTERNS = [
-    r"deutsch.{0,20}(?:flie[sß]end|verhandlungssicher|muttersprachlich|c[12]|b[12])",
-    r"german.{0,20}(?:fluent|native|advanced|proficient|required|mandatory|b[12]|c[12])",
-    r"(?:flie[sß]end|verhandlungssicher).{0,20}deutsch",
-    r"(?:fluent|native|advanced|proficient).{0,20}german",
-    r"deutschkenntnisse.{0,20}(?:erforderlich|zwingend|notwendig|vorausgesetzt)",
-    r"german.{0,20}(?:is a must|required|mandatory|essential)",
-    r"sehr gute.{0,20}deutschkenntnisse",
-    r"(?:b2|c1|c2).{0,10}(?:german|deutsch)",
-]
+def _load_config_from_project_root() -> dict:
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    config_path = os.path.join(project_root, "config.yaml")
+    if not os.path.exists(config_path):
+        return {}
+    try:
+        with open(config_path, "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+            return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
 
 
-def extract_job_skills(text: str) -> Set[str]:
+def _matching_config(config: Optional[dict]) -> dict:
+    data = config if isinstance(config, dict) else _load_config_from_project_root()
+    matching = data.get("matching", {}) if isinstance(data, dict) else {}
+    return matching if isinstance(matching, dict) else {}
+
+
+def extract_job_skills(text: str, config: Optional[dict] = None) -> Set[str]:
     """Extract technical skills mentioned in a job description."""
     text_lower = text.lower()
     found = set()
-    for skill in TECH_KEYWORDS:
+    matching = _matching_config(config)
+    skill_bank = matching.get("tech_keywords", [])
+    if not isinstance(skill_bank, list):
+        return found
+
+    for skill in [str(item).strip().lower() for item in skill_bank if str(item).strip()]:
         if len(skill) <= 2:
             if re.search(r"\b" + re.escape(skill) + r"\b", text_lower):
                 found.add(skill)
@@ -106,14 +99,21 @@ def extract_job_skills(text: str) -> Set[str]:
     return found
 
 
-def detect_german_requirement(text: str) -> tuple[bool, str]:
+def detect_german_requirement(text: str, config: Optional[dict] = None) -> tuple[bool, str]:
     """
     Detect if job requires German language proficiency.
     Returns (requires_german, detected_level).
     """
     text_lower = text.lower()
+    matching = _matching_config(config)
+    german_patterns = matching.get("german_patterns", [])
+    preferred_phrases = matching.get("preferred_german_phrases", [])
+    if not isinstance(german_patterns, list):
+        german_patterns = []
+    if not isinstance(preferred_phrases, list):
+        preferred_phrases = []
 
-    for pattern in GERMAN_PATTERNS:
+    for pattern in german_patterns:
         match = re.search(pattern, text_lower)
         if match:
             matched_text = match.group()
@@ -125,7 +125,7 @@ def detect_german_requirement(text: str) -> tuple[bool, str]:
     # Also check for basic mentions
     if "german" in text_lower or "deutsch" in text_lower:
         # Check context
-        for phrase in ["german preferred", "german is a plus", "deutsch von vorteil"]:
+        for phrase in [str(p).lower() for p in preferred_phrases]:
             if phrase in text_lower:
                 return True, "preferred"
 
@@ -212,7 +212,11 @@ def compute_location_bonus(job: JobPosting, target_cities: List[str]) -> float:
     return 0.0
 
 
-def compute_language_penalty(job: JobPosting, current_german_level: str = "A2") -> tuple[float, List[str]]:
+def compute_language_penalty(
+    job: JobPosting,
+    current_german_level: str = "A2",
+    config: Optional[dict] = None,
+) -> tuple[float, List[str]]:
     """
     Penalty if job requires German proficiency above current level.
     Returns (penalty, warnings).
@@ -221,13 +225,16 @@ def compute_language_penalty(job: JobPosting, current_german_level: str = "A2") 
     if not text:
         return 0.0, []
 
-    requires_german, required_level = detect_german_requirement(text)
+    requires_german, required_level = detect_german_requirement(text, config=config)
 
     if not requires_german:
         return 0.0, []
 
     # Level hierarchy
-    levels = {"a1": 1, "a2": 2, "b1": 3, "b2": 4, "c1": 5, "c2": 6}
+    matching = _matching_config(config)
+    levels = matching.get("language_level_map", {})
+    if not isinstance(levels, dict) or not levels:
+        levels = {"a1": 1, "a2": 2, "b1": 3, "b2": 4, "c1": 5, "c2": 6}
     current = levels.get(current_german_level.lower(), 2)
 
     if required_level == "preferred":
@@ -267,25 +274,35 @@ def match_cv_to_jobs(
     target_cities: List[str] = None,
     target_types: List[str] = None,
     current_german_level: str = "A2",
+    config: Optional[dict] = None,
+    cv_skills_override: Optional[List[str]] = None,
 ) -> List[MatchResult]:
     """
     Match a CV against a list of job postings and score acceptance likelihood.
 
     Returns list of MatchResult sorted by overall score (descending).
     """
-    if target_cities is None:
-        target_cities = ["Berlin", "Wolfsburg", "Leipzig"]
-    if target_types is None:
-        target_types = ["Werkstudent", "Working Student", "Internship", "Praktikum"]
+    cfg = config if isinstance(config, dict) else _load_config_from_project_root()
+    matching = _matching_config(cfg)
 
-    cv_skills_set = set(s.lower() for s in cv.skills)
+    if target_cities is None:
+        raw_cities = cfg.get("cities", []) if isinstance(cfg, dict) else []
+        target_cities = [str(c).strip() for c in raw_cities if str(c).strip()]
+    if target_types is None:
+        raw_types = cfg.get("job_types", []) if isinstance(cfg, dict) else []
+        target_types = [str(t).strip() for t in raw_types if str(t).strip()]
+    if not current_german_level:
+        current_german_level = str(matching.get("default_german_level", "A2"))
+
+    cv_skill_source = cv_skills_override if isinstance(cv_skills_override, list) and cv_skills_override else cv.skills
+    cv_skills_set = set(s.lower() for s in cv_skill_source)
     results = []
 
     job_texts = [f"{job.title} {job.description} {' '.join(job.tags)}".strip() for job in jobs]
     tfidf_scores = compute_tfidf_scores_batch(cv.raw_text, job_texts)
 
     def _score_one(index: int, job: JobPosting, job_text: str) -> MatchResult:
-        job_skills = extract_job_skills(job_text)
+        job_skills = extract_job_skills(job_text, config=cfg)
 
         # 1. Keyword overlap score (weight: 40%)
         kw_score, matched, missing = compute_keyword_score(cv_skills_set, job_skills)
@@ -300,10 +317,14 @@ def match_cv_to_jobs(
         loc_bonus = compute_location_bonus(job, target_cities)
 
         # 5. German language penalty
-        lang_penalty, warnings = compute_language_penalty(job, current_german_level)
+        lang_penalty, warnings = compute_language_penalty(
+            job,
+            current_german_level,
+            config=cfg,
+        )
 
         title_match = fuzz.token_set_ratio(
-            " ".join(target_types + cv.skills[:5]),
+            " ".join(target_types + cv_skill_source[:5]),
             job.title,
         )
 

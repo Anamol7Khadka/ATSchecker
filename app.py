@@ -26,14 +26,21 @@ sys.path.insert(0, SCRIPT_DIR)
 
 from cv_parser import parse_cv
 from ats_checker import run_ats_check
-from job_scraper import load_config, scrape_all_jobs, get_cached_jobs, deduplicate_jobs
+from job_scraper import scrape_all_jobs, get_cached_jobs
 from quality_gate import parse_posted_date, summarize_quality_jobs
 from scrapers.base import is_listing_page
 from cv_job_matcher import match_cv_to_jobs, analyze_skills_gap
+from config_state import (
+    ensure_config_files,
+    get_effective_config,
+    get_cv_filename,
+    get_upload_max_size_bytes,
+    resolve_cv_skills,
+    update_generated_profile,
+)
 
 
 app = Flask(__name__)
-app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024  # 16 MB upload limit
 
 # ─── Jinja2 Filter for Date Formatting ─────────────────────────────
 
@@ -55,6 +62,8 @@ def format_date(value):
 app.jinja_env.filters['format_date'] = format_date
 
 PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
+ensure_config_files(PROJECT_ROOT)
+app.config["MAX_CONTENT_LENGTH"] = get_upload_max_size_bytes(get_effective_config(PROJECT_ROOT))
 
 # ─── Global Application State ─────────────────────────────────────────────────
 
@@ -70,59 +79,10 @@ state = {
     "scrape_logs": [],
 }
 
-THESIS_MARKERS = [
-    "master thesis", "masterarbeit", "master's thesis", "abschlussarbeit",
-    "thesis ai", "thesis machine learning", "thesis deep learning",
-    "thesis nlp", "thesis data science", "thesis computer vision",
-    "thesis reinforcement learning", "diploma thesis", "diplomarbeit",
-    "forschungsarbeit", "research thesis",
-]
-
-DEFAULT_ROLE_KEYWORDS = [
-    "data science",
-    "machine learning",
-    "ml engineer",
-    "ai engineer",
-    "data engineer",
-    "deep learning",
-    "nlp",
-    "computer vision",
-    "software engineer",
-    "backend engineer",
-    "thesis",
-    "research",
-]
-
-DEFAULT_PRESTIGE_COMPANIES = [
-    "bosch",
-    "sap",
-    "siemens",
-    "bmw",
-    "mercedes",
-    "porsche",
-    "volkswagen",
-    "infineon",
-    "zalando",
-    "celonis",
-    "microsoft",
-    "google",
-    "amazon",
-    "apple",
-    "meta",
-    "nvidia",
-]
-
-DEFAULT_LOCATION_KEYWORDS = [
-    "magdeburg",
-    "ovgu",
-    "remote",
-]
-
-
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
 def get_config():
-    return load_config(os.path.join(PROJECT_ROOT, "config.yaml"))
+    return get_effective_config(PROJECT_ROOT)
 
 
 def get_cv_folder():
@@ -131,8 +91,12 @@ def get_cv_folder():
 
 
 def is_thesis_job(job):
+    config = get_config()
+    thesis_markers = config.get("matching", {}).get("thesis_markers", [])
+    if not isinstance(thesis_markers, list):
+        thesis_markers = []
     text = f"{job.title} {job.description}".lower()
-    return any(kw in text for kw in THESIS_MARKERS)
+    return any(str(kw).lower() in text for kw in thesis_markers if str(kw).strip())
 
 
 def is_within_24h(job):
@@ -165,15 +129,15 @@ def _get_opportunity_config(config: dict):
         "recency_hours": int(opportunity_cfg.get("recency_hours", 72)),
         "role_keywords": _to_lower_list(
             opportunity_cfg.get("role_keywords", []),
-            DEFAULT_ROLE_KEYWORDS,
+            [],
         ),
         "prestige_companies": _to_lower_list(
             opportunity_cfg.get("prestige_companies", []),
-            DEFAULT_PRESTIGE_COMPANIES,
+            [],
         ),
         "location_keywords": _to_lower_list(
             opportunity_cfg.get("location_keywords", []),
-            DEFAULT_LOCATION_KEYWORDS,
+            [],
         ),
     }
 
@@ -337,8 +301,14 @@ def build_grouped_jobs(indexed_jobs, group_by: str, match_lookup: dict, opportun
 
 def run_ats_on_cv(pdf_path):
     """Parse CV, run ATS, update state. Re-match if jobs exist."""
-    cv = parse_cv(pdf_path)
+    config = get_config()
+    cv = parse_cv(pdf_path, config=config)
     report = run_ats_check(cv)
+    update_generated_profile(
+        PROJECT_ROOT,
+        cv_file=os.path.basename(pdf_path),
+        cv_skills=cv.skills,
+    )
     state["cv_data"] = cv
     state["cv_path"] = pdf_path
     state["ats_reports"] = [report]
@@ -348,15 +318,20 @@ def run_ats_on_cv(pdf_path):
 
 def _run_matching(cv):
     config = get_config()
+    cv_skills = resolve_cv_skills(config, fallback_skills=cv.skills)
+    language_level = str(config.get("matching", {}).get("default_german_level", "A2"))
     matches = match_cv_to_jobs(
         cv=cv,
         jobs=state["jobs"],
         target_cities=config.get("cities", []),
         target_types=config.get("job_types", []),
+        current_german_level=language_level,
+        config=config,
+        cv_skills_override=cv_skills,
     )
     matches.sort(key=lambda m: m.overall_score, reverse=True)
     state["matches"] = matches
-    state["gap_analysis"] = analyze_skills_gap(matches, list(set(cv.skills)))
+    state["gap_analysis"] = analyze_skills_gap(matches, list(dict.fromkeys(cv_skills)))
 
 
 def _log_scrape(msg: str):
@@ -536,7 +511,8 @@ def compile_cv():
 
             src = os.path.join(tex_dir, "main.pdf")
             if os.path.exists(src):
-                dest = os.path.join(cv_folder, "Aakash_khadka_CV.pdf")
+                cfg = get_config()
+                dest = os.path.join(cv_folder, get_cv_filename(cfg, source="compile"))
                 shutil.copy2(src, dest)
                 state["compile_status"]["message"] = "Running ATS check..."
                 run_ats_on_cv(dest)
@@ -564,11 +540,12 @@ def upload_cv():
     for old in Path(cv_folder).glob("*.pdf"):
         old.unlink()
 
-    dest = os.path.join(cv_folder, "Aakash_khadka_CV.pdf")
+    cfg = get_config()
+    dest = os.path.join(cv_folder, get_cv_filename(cfg, source="upload"))
     f.save(dest)
     try:
         run_ats_on_cv(dest)
-        return jsonify({"status": "success", "message": "Uploaded and analyzed Aakash_khadka_CV.pdf"})
+        return jsonify({"status": "success", "message": f"Uploaded and analyzed {os.path.basename(dest)}"})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 

@@ -10,6 +10,7 @@ from typing import Dict, List, Optional
 
 import pdfplumber
 import fitz  # PyMuPDF
+import yaml
 
 
 @dataclass
@@ -41,34 +42,27 @@ class CVData:
     hyperlinks: List[str] = field(default_factory=list)
 
 
-# Common tech skills dictionary for extraction
-TECH_SKILLS = {
-    # Languages
-    "python", "java", "javascript", "typescript", "c++", "c#", "go", "rust",
-    "ruby", "php", "swift", "kotlin", "scala", "r", "matlab", "bash", "sql",
-    "html", "css", "perl", "lua", "dart", "flutter",
-    # Frameworks & Libraries
-    "react", "react.js", "angular", "vue", "vue.js", "node.js", "django",
-    "flask", "fastapi", "spring", "spring boot", "express", ".net", "rails",
-    "next.js", "nuxt.js", "svelte", "jquery", "bootstrap", "tailwind",
-    # Data & ML
-    "pandas", "numpy", "scikit-learn", "pytorch", "tensorflow", "keras",
-    "spark", "pyspark", "hadoop", "mapreduce", "hdfs", "hive", "kafka",
-    "airflow", "dbt", "flink", "beam", "mlflow", "langchain", "llm",
-    "machine learning", "deep learning", "nlp", "computer vision",
-    "data engineering", "data science", "etl", "elt", "rag",
-    # Databases
-    "postgresql", "mysql", "mongodb", "redis", "cassandra", "dynamodb",
-    "sqlite", "oracle", "sql server", "neo4j", "elasticsearch",
-    # Cloud & DevOps
-    "aws", "azure", "gcp", "docker", "kubernetes", "terraform", "ansible",
-    "jenkins", "gitlab ci", "github actions", "ci/cd", "linux", "nginx",
-    "lambda", "ec2", "s3", "cloudwatch", "sqs", "sns", "ecs", "eks",
-    # Tools
-    "git", "maven", "gradle", "webpack", "vite", "jira", "confluence",
-    "figma", "postman", "swagger", "graphql", "rest api", "grpc",
-    "protobuf", "rabbitmq", "celery",
-}
+def _load_config_from_project_root() -> dict:
+    """Load effective config without requiring callers to pass it explicitly."""
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    config_path = os.path.join(project_root, "config.yaml")
+    if not os.path.exists(config_path):
+        return {}
+    try:
+        with open(config_path, "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+            return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def _get_parser_skills(config: Optional[dict]) -> List[str]:
+    data = config if isinstance(config, dict) else _load_config_from_project_root()
+    matching = data.get("matching", {}) if isinstance(data, dict) else {}
+    skills = matching.get("cv_parser_skills", [])
+    if not isinstance(skills, list):
+        return []
+    return [str(skill).strip().lower() for skill in skills if str(skill).strip()]
 
 
 def extract_text_pdfplumber(pdf_path: str) -> tuple[str, bool, int]:
@@ -212,12 +206,13 @@ def extract_sections(text: str) -> Dict[str, str]:
     return sections
 
 
-def extract_skills(text: str) -> List[str]:
+def extract_skills(text: str, config: Optional[dict] = None) -> List[str]:
     """Extract technical skills from CV text by matching against known skills."""
     text_lower = text.lower()
     found_skills = []
+    skills_bank = sorted(_get_parser_skills(config), key=len, reverse=True)
 
-    for skill in sorted(TECH_SKILLS, key=len, reverse=True):
+    for skill in skills_bank:
         # Use word boundary matching for short skills to avoid false positives
         if len(skill) <= 2:
             pattern = r"\b" + re.escape(skill) + r"\b"
@@ -230,7 +225,7 @@ def extract_skills(text: str) -> List[str]:
     return sorted(set(found_skills))
 
 
-def parse_cv(pdf_path: str) -> CVData:
+def parse_cv(pdf_path: str, config: Optional[dict] = None) -> CVData:
     """Parse a CV PDF and return structured CVData."""
     pdf_path = os.path.abspath(pdf_path)
     file_name = os.path.basename(pdf_path)
@@ -245,7 +240,7 @@ def parse_cv(pdf_path: str) -> CVData:
     # Extract structured data
     contact_info = extract_contact_info(raw_text)
     sections = extract_sections(raw_text)
-    skills = extract_skills(raw_text)
+    skills = extract_skills(raw_text, config=config)
 
     return CVData(
         file_path=pdf_path,

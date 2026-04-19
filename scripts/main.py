@@ -19,16 +19,15 @@ import sys
 import webbrowser
 from typing import Dict, List
 
-import yaml
-
 # Add scripts/ to path so imports work
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from cv_parser import CVData, parse_cv
 from ats_checker import ATSReport, analyze_pdf, run_ats_check
-from job_scraper import load_config, scrape_all_jobs, get_cached_jobs
+from job_scraper import scrape_all_jobs, get_cached_jobs
 from cv_job_matcher import MatchResult, SkillsGapAnalysis, match_cv_to_jobs, analyze_skills_gap
 from report_generator import generate_report
+from config_state import ensure_config_files, get_effective_config, resolve_cv_skills, update_generated_profile
 
 
 # ─────────────────────────────────────────────────────────────
@@ -40,8 +39,8 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 def get_config() -> dict:
     """Load project config."""
-    config_path = os.path.join(PROJECT_ROOT, "config.yaml")
-    return load_config(config_path)
+    ensure_config_files(PROJECT_ROOT)
+    return get_effective_config(PROJECT_ROOT)
 
 
 def get_cv_folder(config: dict) -> str:
@@ -214,15 +213,25 @@ def cmd_match(config: dict):
         print(f"\n  ▶ Matching: {fname}")
 
         try:
-            cv = parse_cv(pdf_path)
+            cv = parse_cv(pdf_path, config=config)
+            update_generated_profile(
+                PROJECT_ROOT,
+                cv_file=os.path.basename(pdf_path),
+                cv_skills=cv.skills,
+            )
+            refreshed = get_config()
+            cv_skills = resolve_cv_skills(refreshed, fallback_skills=cv.skills)
             matches = match_cv_to_jobs(
                 cv=cv,
                 jobs=jobs,
                 target_cities=config.get("cities", []),
                 target_types=config.get("job_types", []),
+                current_german_level=str(refreshed.get("matching", {}).get("default_german_level", "A2")),
+                config=refreshed,
+                cv_skills_override=cv_skills,
             )
             all_matches.extend(matches)
-            all_cv_skills.extend(cv.skills)
+            all_cv_skills.extend(cv_skills)
 
             # Print top 5
             print(f"    Found {len(matches)} matches")
@@ -284,7 +293,14 @@ def cmd_scan(config: dict):
         fname = os.path.basename(pdf_path)
         print(f"\n  ▶ Analyzing: {fname}")
         try:
-            cv = parse_cv(pdf_path)
+            cv = parse_cv(pdf_path, config=config)
+            update_generated_profile(
+                PROJECT_ROOT,
+                cv_file=os.path.basename(pdf_path),
+                cv_skills=cv.skills,
+            )
+            refreshed = get_config()
+            cv_skills = resolve_cv_skills(refreshed, fallback_skills=cv.skills)
             cvs_parsed.append(cv)
             report = run_ats_check(cv)
             ats_reports.append(report)
@@ -316,14 +332,19 @@ def cmd_scan(config: dict):
 
     for cv in cvs_parsed:
         if jobs:
+            refreshed = get_config()
+            cv_skills = resolve_cv_skills(refreshed, fallback_skills=cv.skills)
             matches = match_cv_to_jobs(
                 cv=cv,
                 jobs=jobs,
                 target_cities=config.get("cities", []),
                 target_types=config.get("job_types", []),
+                current_german_level=str(refreshed.get("matching", {}).get("default_german_level", "A2")),
+                config=refreshed,
+                cv_skills_override=cv_skills,
             )
             all_matches.extend(matches)
-        all_cv_skills.extend(cv.skills)
+        all_cv_skills.extend(cv_skills)
 
     # Deduplicate matches (same job from multiple CVs)
     seen = set()

@@ -70,6 +70,17 @@ python scripts/main.py scan
 
 The tool automatically detects new/changed files and only re-analyzes those.
 
+For the web app upload flow (`/api/upload`), the uploaded file is saved into the folder from `paths.cv_folder` in `config.yaml`.
+The filename is controlled by `behavior.uploaded_cv_filename` (or `behavior.compiled_cv_filename` for LaTeX compile flow).
+
+The app will auto-create `config.yaml` from `config.template.yaml` if missing.
+Generated CV-derived state (like extracted skills) is written to `config.generated.yaml` and **never overwrites** user-authored values in `config.yaml`.
+Runtime precedence is:
+
+1. `config.yaml` (user overrides)
+2. `config.generated.yaml` (derived values)
+3. `config.template.yaml` (defaults)
+
 ## Configuration
 
 Edit `config.yaml` to customize:
@@ -107,6 +118,8 @@ scraping:
 
 ```
 ATSchecker/
+├── config.template.yaml        # Bootstrap defaults (used if config.yaml is missing)
+├── config.generated.yaml       # Auto-generated CV-derived data (non-destructive)
 ├── cvs/                        # Drop PDF CVs here
 ├── reports/                    # Generated HTML dashboards
 ├── scripts/

@@ -27,21 +27,32 @@ from scrapers.jobteaser import JobteaserScraper
 from scrapers.adzuna import AdzunaScraper
 from scrapers.remoteok import RemoteOKScraper
 from scrapers.company_portals import CompanyPortalsScraper
+from scrapers.jooble import JoobleScraper
+from scrapers.rss_feeds import RSSJobScraper
+from scrapers.arbeitsagentur import ArbeitsagenturScraper
 from scrapers.rate_limiter import reset_state as reset_rate_limiter
 
 
-# Registry of all available scrapers
+# Registry of all available scrapers — ALL run in parallel for maximum coverage
 SCRAPER_REGISTRY = {
-    "arbeitnow": ArbeitnowScraper,
-    "google_jobs": GoogleJobsScraper,
+    # ── API-based (most reliable, no anti-bot issues) ──
+    "arbeitsagentur": ArbeitsagenturScraper,  # Germany's official employment agency
+    "arbeitnow": ArbeitnowScraper,            # Free API, Germany-focused
+    "jooble": JoobleScraper,                  # Aggregator (needs free API key)
+    "adzuna": AdzunaScraper,                  # Free API (needs free API key)
+    "rss_feeds": RSSJobScraper,               # RSS feeds (always works)
+    "remoteok": RemoteOKScraper,              # Remote jobs API
+
+    # ── Search engine aggregation ──
+    "google_jobs": GoogleJobsScraper,          # DDG/Google → 80+ job sites
+    "company_portals": CompanyPortalsScraper,  # DDG → company career pages
+
+    # ── Selenium-based (may be blocked by anti-bot) ──
     "linkedin": LinkedInScraper,
     "indeed": IndeedScraper,
     "stepstone": StepStoneScraper,
     "xing": XingScraper,
     "jobteaser": JobteaserScraper,
-    "adzuna": AdzunaScraper,
-    "remoteok": RemoteOKScraper,
-    "company_portals": CompanyPortalsScraper,
 }
 
 
@@ -405,7 +416,7 @@ def scrape_all_jobs(
                 if attempt >= retries:
                     return city_name, [], exc, _quality_metrics_template(), 0
                 logger(
-                    f"    ⚠ {scraper_name} failed for {city_name} (attempt {attempt + 1}/{retries + 1}): {exc}"
+                    f"    [!] {scraper_name} failed for {city_name} (attempt {attempt + 1}/{retries + 1}): {exc}"
                 )
                 _retry_wait(attempt)
 
@@ -414,11 +425,11 @@ def scrape_all_jobs(
     def _run_scraper(scraper_name: str):
         scraper_cls = SCRAPER_REGISTRY.get(scraper_name)
         if not scraper_cls:
-            logger(f"⚠ Unknown scraper: {scraper_name}, skipping.")
+            logger(f"[!] Unknown scraper: {scraper_name}, skipping.")
             return scraper_name, []
 
         logger(f"\n{'─'*50}")
-        logger(f"▶ Running {scraper_name} scraper...")
+        logger(f"[>] Running {scraper_name} scraper...")
         logger(f"{'─'*50}")
 
         scraper_jobs: List[JobPosting] = []
@@ -436,7 +447,7 @@ def scrape_all_jobs(
                         _, city_jobs, err, metrics, raw_count = future.result()
                         _merge_quality_metrics(overall_quality_metrics, metrics)
                         if err:
-                            logger(f"    ✗ Error scraping {city_name}: {err}")
+                            logger(f"    [x] Error scraping {city_name}: {err}")
                             continue
                         scraper_jobs.extend(city_jobs)
                         if metrics["rejected"]:
@@ -448,14 +459,14 @@ def scrape_all_jobs(
                         if on_batch and city_jobs:
                             on_batch(city_jobs)
                     except Exception as exc:
-                        logger(f"    ✗ Error scraping {city_name}: {exc}")
+                        logger(f"    [x] Error scraping {city_name}: {exc}")
         else:
             for city_name in cities:
-                logger(f"  📍 Searching in {city_name}...")
+                logger(f"  [>] Searching in {city_name}...")
                 _, city_jobs, err, metrics, raw_count = _scrape_city(scraper_name, city_name)
                 _merge_quality_metrics(overall_quality_metrics, metrics)
                 if err:
-                    logger(f"    ✗ Error scraping {city_name}: {err}")
+                    logger(f"    [x] Error scraping {city_name}: {err}")
                     continue
                 scraper_jobs.extend(city_jobs)
                 if metrics["rejected"]:
@@ -484,17 +495,17 @@ def scrape_all_jobs(
                     intermediate = deduplicate_jobs(all_jobs)
                     save_cache(cache_path, intermediate)
                     logger(
-                        f"  💾 Saved {len(intermediate)} jobs to cache (incremental after {scraper_name})"
+                        f"  [*] Saved {len(intermediate)} jobs to cache (incremental after {scraper_name})"
                     )
                 except Exception as exc:
-                    logger(f"⚠ Scraper {scraper_name} failed: {exc}")
+                    logger(f"[!] Scraper {scraper_name} failed: {exc}")
     else:
         for scraper_name in priority:
             _, scraper_jobs = _run_scraper(scraper_name)
             all_jobs.extend(scraper_jobs)
             intermediate = deduplicate_jobs(all_jobs)
             save_cache(cache_path, intermediate)
-            logger(f"  💾 Saved {len(intermediate)} jobs to cache (incremental)")
+            logger(f"  [*] Saved {len(intermediate)} jobs to cache (incremental)")
 
     if overall_quality_metrics["rejected"]:
         logger(

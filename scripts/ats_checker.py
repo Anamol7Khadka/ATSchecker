@@ -47,7 +47,7 @@ STANDARD_SECTIONS = {
 }
 
 # Characters that commonly cause ATS parsing issues
-PROBLEMATIC_CHARS = set("•·|→←↑↓★☆▪▫►◄■□●○♦♣♠♥✓✗✔✘✦✧⊕⊗⊙⊛")
+PROBLEMATIC_CHARS = set("•·|→←↑↓★☆▪▫►◄■□●○♦♣♠♥[OK][x]✔✘✦✧⊕⊗⊙⊛")
 
 
 def _status(score: int) -> str:
@@ -238,24 +238,24 @@ def check_contact_info(cv: CVData) -> ATSCheck:
 
     if cv.contact_info.email:
         found += 1
-        details.append(f"✓ Email: {cv.contact_info.email}")
+        details.append(f"[OK] Email: {cv.contact_info.email}")
     else:
-        details.append("✗ No email address found")
+        details.append("[x] No email address found")
 
     if cv.contact_info.phone:
         found += 1
-        details.append(f"✓ Phone: {cv.contact_info.phone}")
+        details.append(f"[OK] Phone: {cv.contact_info.phone}")
     else:
-        details.append("✗ No phone number found")
+        details.append("[x] No phone number found")
 
     if cv.contact_info.linkedin:
         found += 1
-        details.append(f"✓ LinkedIn: {cv.contact_info.linkedin}")
+        details.append(f"[OK] LinkedIn: {cv.contact_info.linkedin}")
     else:
-        details.append("✗ No LinkedIn URL found")
+        details.append("[x] No LinkedIn URL found")
 
     if cv.contact_info.github:
-        details.append(f"✓ GitHub: {cv.contact_info.github}")
+        details.append(f"[OK] GitHub: {cv.contact_info.github}")
 
     score = int((found / total_expected) * 10)
     msg = f"{found}/{total_expected} key contact fields detected."
@@ -575,7 +575,7 @@ if __name__ == "__main__":
     print(f"{'='*60}")
 
     for check in report.checks:
-        icon = {"pass": "✓", "warning": "⚠", "fail": "✗"}[check.status]
+        icon = {"pass": "[OK]", "warning": "[!]", "fail": "[x]"}[check.status]
         print(f"  {icon} {check.name}: {check.score}/{check.max_score} — {check.message}")
         for d in check.details:
             print(f"      {d}")

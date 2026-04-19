@@ -1,14 +1,22 @@
 #!/usr/bin/env python3
+# Fix Windows console encoding — must be before any print/import with Unicode
+import sys, io
+if sys.stdout.encoding != 'utf-8':
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+if sys.stderr.encoding != 'utf-8':
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
 """
 app.py — ATSchecker Flask Web Application.
 
 Dynamic dashboard for CV analysis, job matching, and AI cover letter generation.
+Now with SQLite persistence, user profiles, and application tracking.
 
 Usage:
     python app.py
     Open http://localhost:5000
 """
 
+import json
 import os
 import shutil
 import subprocess
@@ -27,8 +35,8 @@ sys.path.insert(0, SCRIPT_DIR)
 from cv_parser import parse_cv
 from ats_checker import run_ats_check
 from job_scraper import scrape_all_jobs, get_cached_jobs
-from quality_gate import parse_posted_date, summarize_quality_jobs
-from scrapers.base import is_listing_page
+from quality_gate import parse_posted_date, summarize_quality_jobs, normalize_url
+from scrapers.base import is_listing_page, JobPosting
 from cv_job_matcher import match_cv_to_jobs, analyze_skills_gap
 from config_state import (
     ensure_config_files,
@@ -38,6 +46,19 @@ from config_state import (
     resolve_cv_skills,
     update_generated_profile,
 )
+
+# New: Database and profile system
+import database as db
+from profile import (
+    extract_profile_from_cv,
+    suggest_roles,
+    detect_experience_level,
+    build_search_queries_from_profile,
+    JOB_TYPE_OPTIONS,
+    GERMAN_CITIES,
+    ROLE_SUGGESTIONS,
+)
+from skill_taxonomy import extract_skills_from_text, get_skills_by_category
 
 
 app = Flask(__name__)
@@ -64,6 +85,9 @@ app.jinja_env.filters['format_date'] = format_date
 PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
 ensure_config_files(PROJECT_ROOT)
 app.config["MAX_CONTENT_LENGTH"] = get_upload_max_size_bytes(get_effective_config(PROJECT_ROOT))
+
+# Initialize database on import
+db.init_db()
 
 # ─── Global Application State ─────────────────────────────────────────────────
 
@@ -320,6 +344,30 @@ def _run_matching(cv):
     config = get_config()
     cv_skills = resolve_cv_skills(config, fallback_skills=cv.skills)
     language_level = str(config.get("matching", {}).get("default_german_level", "A2"))
+
+    # Pull profile data from database if available
+    profile = db.get_profile()
+    profile_skills = db.get_skills() if profile.get("onboarding_complete") else None
+    desired_roles = []
+    experience_level = "entry"
+
+    if profile.get("onboarding_complete"):
+        # Use profile preferences
+        raw_roles = profile.get("desired_roles", "")
+        if isinstance(raw_roles, str) and raw_roles:
+            try:
+                import json
+                desired_roles = json.loads(raw_roles)
+            except (json.JSONDecodeError, TypeError):
+                desired_roles = [r.strip() for r in raw_roles.split(",") if r.strip()]
+        elif isinstance(raw_roles, list):
+            desired_roles = raw_roles
+
+        experience_level = profile.get("experience_level", "entry") or "entry"
+        german = profile.get("german_level", "")
+        if german:
+            language_level = german
+
     matches = match_cv_to_jobs(
         cv=cv,
         jobs=state["jobs"],
@@ -328,6 +376,9 @@ def _run_matching(cv):
         current_german_level=language_level,
         config=config,
         cv_skills_override=cv_skills,
+        desired_roles=desired_roles,
+        experience_level=experience_level,
+        profile_skills=profile_skills,
     )
     matches.sort(key=lambda m: m.overall_score, reverse=True)
     state["matches"] = matches
@@ -358,6 +409,22 @@ def inject_globals():
 
 @app.route("/")
 def dashboard():
+    """Render the new SPA dashboard."""
+    ats_score = 0
+    if state["ats_reports"]:
+        report = state["ats_reports"][-1]
+        ats_score = getattr(report, "ats_score", 0) if not isinstance(report, dict) else report.get("ats_score", 0)
+
+    return render_template(
+        "base.html",
+        job_count=len(state["jobs"]),
+        ats_score=ats_score,
+    )
+
+
+@app.route("/legacy")
+def legacy_dashboard():
+    """Render the old Jinja2 dashboard (for backward compatibility)."""
     config = get_config()
     cv_folder = get_cv_folder()
     group_options = [
@@ -561,7 +628,8 @@ def start_scrape():
         selected_cities = request.json.get("cities") or None
 
     def _on_batch(new_jobs):
-        """Called after each city scrape — push jobs into state immediately, deduped and filtered."""
+        """Called after each city scrape — push jobs into state + DB immediately."""
+        batch_for_db = []
         for job in new_jobs:
             # Filter out search listing pages
             if is_listing_page(job.title, job.url):
@@ -569,6 +637,10 @@ def start_scrape():
             url_key = (job.quality or {}).get("normalized_url") or job.url
             if not any(((j.quality or {}).get("normalized_url") or j.url) == url_key for j in state["jobs"]):
                 state["jobs"].append(job)
+                batch_for_db.append(job)
+        # Persist to database immediately
+        if batch_for_db:
+            sync_jobs_to_db(batch_for_db)
 
 
     def _scrape():
@@ -588,10 +660,14 @@ def start_scrape():
             )
             # Replace state with final verified+deduplicated jobs from scrape_all_jobs
             state["jobs"] = jobs
-            state["scrape_status"] = {"running": False, "message": f"Done! {len(state['jobs'])} verified jobs available. Click 'Sort & Analyze' to rank them."}
+            # Final sync to DB
+            synced = sync_jobs_to_db(jobs)
+            _log_scrape(f"[OK] Synced {synced} jobs to database (persistent)")
+            state["scrape_status"] = {"running": False, "message": f"Done! {len(state['jobs'])} verified jobs available ({synced} saved to database). Click 'Sort & Analyze' to rank them."}
         except Exception as e:
-            # Even on error, keep whatever jobs were found so far
-            state["scrape_status"] = {"running": False, "message": f"Stopped: {e}. {len(state['jobs'])} jobs kept."}
+            # Even on error, keep whatever jobs were found so far + sync what we have
+            sync_jobs_to_db(state["jobs"])
+            state["scrape_status"] = {"running": False, "message": f"Stopped: {e}. {len(state['jobs'])} jobs kept (synced to database)."}
 
     threading.Thread(target=_scrape, daemon=True).start()
     return jsonify({"status": "started"})
@@ -751,21 +827,476 @@ def get_ats_report():
     })
 
 
+# ─── Profile & Onboarding API ────────────────────────────────────────────────
+
+@app.route("/api/profile", methods=["GET"])
+def get_profile_api():
+    """Get user profile including skills and onboarding status."""
+    profile = db.get_profile()
+    skills = db.get_skills()
+
+    # If no onboarding skills yet, extract from CV as a preview
+    if not skills and state.get("cv_data"):
+        try:
+            from skill_taxonomy import extract_skills_from_text
+            extracted = extract_skills_from_text(state["cv_data"].raw_text, source="cv")
+            skills = [{"name": e.canonical, "category": e.category, "level": "detected"} for e in extracted]
+        except Exception:
+            skills = [{"name": s} for s in (state["cv_data"].skills or [])]
+
+    # Flatten profile data for easy frontend access
+    desired_roles = profile.get("desired_roles", "")
+    if isinstance(desired_roles, str) and desired_roles:
+        try:
+            import json
+            desired_roles = json.loads(desired_roles)
+        except (json.JSONDecodeError, TypeError):
+            desired_roles = [r.strip() for r in desired_roles.split(",") if r.strip()]
+    elif not isinstance(desired_roles, list):
+        desired_roles = []
+
+    desired_locations = profile.get("desired_locations", "")
+    if isinstance(desired_locations, str) and desired_locations:
+        try:
+            import json
+            desired_locations = json.loads(desired_locations)
+        except (json.JSONDecodeError, TypeError):
+            desired_locations = [l.strip() for l in desired_locations.split(",") if l.strip()]
+    elif not isinstance(desired_locations, list):
+        desired_locations = []
+
+    desired_types = profile.get("desired_types", "")
+    if isinstance(desired_types, str) and desired_types:
+        try:
+            import json
+            desired_types = json.loads(desired_types)
+        except (json.JSONDecodeError, TypeError):
+            desired_types = [t.strip() for t in desired_types.split(",") if t.strip()]
+    elif not isinstance(desired_types, list):
+        desired_types = []
+
+    return jsonify({
+        "profile": profile,
+        "skills": skills,
+        "onboarding_complete": bool(profile.get("onboarding_complete", 0)),
+        "name": profile.get("name", ""),
+        "email": profile.get("email", ""),
+        "german_level": profile.get("german_level", "A2"),
+        "experience_level": profile.get("experience_level", "entry"),
+        "desired_roles": desired_roles,
+        "desired_locations": desired_locations,
+        "desired_types": desired_types,
+        "role_options": list(ROLE_SUGGESTIONS.keys()),
+        "type_options": JOB_TYPE_OPTIONS,
+        "city_options": GERMAN_CITIES,
+        "skill_categories": get_skills_by_category(),
+    })
+
+
+@app.route("/api/profile", methods=["PUT"])
+def update_profile_api():
+    """Update user profile (used by onboarding and settings)."""
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "No data provided"}), 400
+
+    # Extract skills if provided separately
+    skills_data = data.pop("skills", None)
+    if skills_data is not None:
+        db.set_skills(skills_data)
+
+    # Map frontend field names to DB column names
+    profile_data = {}
+    field_map = {
+        "desired_types": "desired_job_types",
+    }
+    known_fields = {
+        "name", "email", "phone", "linkedin", "github", "german_level",
+        "desired_roles", "desired_job_types", "desired_locations", "desired_companies",
+        "onboarding_complete", "education_level", "field_of_study",
+    }
+    for key, value in data.items():
+        mapped_key = field_map.get(key, key)
+        if mapped_key in known_fields:
+            profile_data[mapped_key] = value
+
+    # Handle experience_level (may need column creation)
+    if "experience_level" in data:
+        db._ensure_column("user_profile", "experience_level", "TEXT", "'entry'")
+        profile_data["experience_level"] = data["experience_level"]
+
+    if profile_data:
+        profile = db.upsert_profile(profile_data)
+    else:
+        profile = db.get_profile()
+    return jsonify({"status": "success", "profile": profile})
+
+
+@app.route("/api/profile/upload-cv", methods=["POST"])
+def upload_cv_for_profile():
+    """
+    Onboarding Step 1: Upload CV and extract profile data.
+    Returns extracted skills, education, experience for user review.
+    """
+    if "file" not in request.files:
+        return jsonify({"error": "No file provided"}), 400
+    f = request.files["file"]
+    if not f.filename or not f.filename.lower().endswith(".pdf"):
+        return jsonify({"error": "Only PDF files accepted"}), 400
+
+    cv_folder = get_cv_folder()
+    os.makedirs(cv_folder, exist_ok=True)
+    # Remove old PDFs
+    for old in Path(cv_folder).glob("*.pdf"):
+        old.unlink()
+
+    cfg = get_config()
+    dest = os.path.join(cv_folder, get_cv_filename(cfg, source="upload"))
+    f.save(dest)
+
+    try:
+        # Parse CV
+        cv = parse_cv(dest, config=cfg)
+
+        # Run ATS check
+        report = run_ats_check(cv)
+
+        # Extract profile data using new profile system
+        extracted = extract_profile_from_cv(cv)
+
+        # Suggest roles based on detected skills
+        skill_names = [s["name"] for s in extracted["skills"]]
+        role_suggestions = suggest_roles(skill_names)
+
+        # Store CV data in the old state for backward compatibility
+        state["cv_data"] = cv
+        state["cv_path"] = dest
+        state["ats_reports"] = [report]
+
+        # Save to database
+        ats_report_data = {
+            "score": report.overall_score,
+            "grade": report.grade,
+            "checks": [
+                {
+                    "name": c.name, "score": c.score, "max_score": c.max_score,
+                    "status": c.status, "message": c.message, "details": c.details,
+                }
+                for c in report.checks
+            ],
+            "recommendations": report.recommendations,
+        }
+
+        db.upsert_profile({
+            "name": extracted["contact"]["name"],
+            "email": extracted["contact"]["email"],
+            "phone": extracted["contact"]["phone"],
+            "linkedin": extracted["contact"]["linkedin"],
+            "github": extracted["contact"]["github"],
+            "education_level": extracted["education_level"],
+            "cv_raw_text": extracted["cv_raw_text"],
+            "cv_file_name": extracted["cv_file_name"],
+            "cv_uploaded_at": datetime.now().isoformat(),
+            "ats_score": report.overall_score,
+            "ats_grade": report.grade,
+            "ats_report": ats_report_data,
+        })
+
+        # Save extracted skills
+        db.set_skills(extracted["skills"])
+
+        return jsonify({
+            "status": "success",
+            "extracted": {
+                "contact": extracted["contact"],
+                "skills": extracted["skills"],
+                "education_level": extracted["education_level"],
+                "experience_level": extracted["experience_level"],
+                "experience_signals": extracted["experience_signals"],
+                "sections": extracted["sections"],
+            },
+            "ats": {
+                "score": report.overall_score,
+                "grade": report.grade,
+            },
+            "role_suggestions": role_suggestions,
+            "role_options": list(ROLE_SUGGESTIONS.keys()),
+            "job_type_options": JOB_TYPE_OPTIONS,
+            "city_options": GERMAN_CITIES,
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/profile/complete-onboarding", methods=["POST"])
+def complete_onboarding():
+    """Onboarding Step 3: Finalize profile after user review."""
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "No data provided"}), 400
+
+    # Save confirmed skills (from frontend chips)
+    confirmed_skills = data.pop("confirmed_skills", []) or data.pop("skills", [])
+    if confirmed_skills:
+        # Convert plain strings to skill dicts
+        skill_dicts = []
+        for s in confirmed_skills:
+            if isinstance(s, str):
+                skill_dicts.append({"name": s, "category": "", "level": "detected", "from_cv": True, "confirmed": True})
+            elif isinstance(s, dict):
+                skill_dicts.append(s)
+        db.set_skills(skill_dicts)
+
+    # Map frontend field names to DB column names
+    profile_data = {}
+    if "desired_roles" in data:
+        profile_data["desired_roles"] = data["desired_roles"]
+    if "desired_types" in data:
+        profile_data["desired_job_types"] = data["desired_types"]
+    if "desired_locations" in data:
+        profile_data["desired_locations"] = data["desired_locations"]
+    if "german_level" in data:
+        profile_data["german_level"] = data["german_level"]
+    if "experience_level" in data:
+        # Store in a known field — use field_of_study temporarily or add column
+        # For now use _ensure_column to add it if missing
+        db._ensure_column("user_profile", "experience_level", "TEXT", "'entry'")
+        profile_data["experience_level"] = data["experience_level"]
+    if "name" in data:
+        profile_data["name"] = data["name"]
+    if "email" in data:
+        profile_data["email"] = data["email"]
+
+    # Mark onboarding complete
+    profile_data["onboarding_complete"] = 1
+    profile = db.upsert_profile(profile_data)
+
+    # Re-run matching with profile data now available
+    if state.get("cv_data") and state.get("jobs"):
+        _run_matching(state["cv_data"])
+
+    return jsonify({"status": "success", "profile": profile})
+
+
+# ─── Application Tracking API ────────────────────────────────────────────────
+
+@app.route("/api/applications", methods=["GET"])
+def get_applications_api():
+    """Get all tracked applications."""
+    status_filter = request.args.get("status", "")
+    apps = db.get_applications(status=status_filter)
+    summary = db.get_pipeline_summary()
+    return jsonify({"applications": apps, "pipeline": summary})
+
+
+@app.route("/api/applications", methods=["POST"])
+def save_application_api():
+    """Save a job to the application pipeline."""
+    data = request.get_json()
+    if not data or "job_id" not in data:
+        return jsonify({"error": "job_id required"}), 400
+    status = data.get("status", "saved")
+    app_data = db.save_application(data["job_id"], status)
+    return jsonify({"status": "success", "application": app_data})
+
+
+@app.route("/api/applications/<int:job_id>", methods=["PATCH"])
+def update_application_api(job_id):
+    """Update application status."""
+    data = request.get_json()
+    if not data or "status" not in data:
+        return jsonify({"error": "status required"}), 400
+    try:
+        app_data = db.update_application_status(job_id, data["status"])
+        return jsonify({"status": "success", "application": app_data})
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+
+
+@app.route("/api/applications/<int:job_id>/notes", methods=["POST"])
+def add_note_api(job_id):
+    """Add a note to an application."""
+    data = request.get_json()
+    if not data or "content" not in data:
+        return jsonify({"error": "content required"}), 400
+
+    app_entry = db.get_application(job_id)
+    if not app_entry:
+        return jsonify({"error": "Application not found. Save the job first."}), 404
+
+    note = db.add_note(app_entry["id"], data["content"], data.get("note_type", "general"))
+    return jsonify({"status": "success", "note": note})
+
+
+@app.route("/api/applications/<int:job_id>/notes", methods=["GET"])
+def get_notes_api(job_id):
+    app_entry = db.get_application(job_id)
+    if not app_entry:
+        return jsonify({"notes": []})
+    notes = db.get_notes(app_entry["id"])
+    return jsonify({"notes": notes})
+
+
+@app.route("/api/jobs/dismiss", methods=["POST"])
+def dismiss_job_api():
+    """Dismiss a job — user not interested."""
+    data = request.get_json()
+    if not data or "job_id" not in data:
+        return jsonify({"error": "job_id required"}), 400
+    db.dismiss_job(data["job_id"], data.get("reason", ""))
+    return jsonify({"status": "success"})
+
+
+@app.route("/api/pipeline-summary")
+def pipeline_summary_api():
+    """Quick summary of application pipeline for dashboard."""
+    summary = db.get_pipeline_summary()
+    total_jobs = db.get_job_count()
+    profile = db.get_profile()
+    return jsonify({
+        "pipeline": summary,
+        "total_jobs": total_jobs,
+        "onboarding_complete": bool(profile.get("onboarding_complete", 0)),
+        "ats_score": profile.get("ats_score", 0),
+    })
+
+
+@app.route("/api/matches")
+def matches_api():
+    """Return match results for the current CV against all jobs."""
+    limit = int(request.args.get("limit", 50))
+
+    matches = state.get("matches", [])
+
+    # If no matches computed yet and we have CV + jobs, compute now
+    if not matches and state.get("cv_data") and state.get("jobs"):
+        _run_matching(state["cv_data"])
+        matches = state.get("matches", [])
+
+    gap = state.get("gap_analysis")
+    gap_dict = None
+    if gap:
+        gap_dict = {
+            "top_missing": gap.top_missing,
+            "missing_skills_frequency": gap.missing_skills_frequency,
+            "cv_skills": gap.cv_skills,
+        }
+
+    results = []
+    for m in matches[:limit]:
+        d = m.to_dict()
+        # Add the DB job_id if we can find it
+        try:
+            job_id = getattr(m.job, '_db_id', None)
+            if not job_id:
+                # Look up by URL
+                conn = db.get_connection()
+                row = conn.execute(
+                    "SELECT id FROM jobs WHERE url = ? OR normalized_url = ? LIMIT 1",
+                    (m.job.url, normalize_url(m.job.url))
+                ).fetchone()
+                job_id = row["id"] if row else 0
+        except Exception:
+            job_id = 0
+        d["job_id"] = job_id
+        results.append(d)
+
+    return jsonify({
+        "matches": results,
+        "total": len(matches),
+        "gap_analysis": gap_dict,
+    })
+
+
+@app.route("/compile", methods=["POST"])
+def compile_trigger():
+    """Trigger job scraping (used by new frontend scrape button)."""
+    return start_scrape()
+
+
+@app.route("/quit", methods=["POST"])
+def quit_server():
+    """Shut down the server (used by new frontend quit button)."""
+    func = request.environ.get("werkzeug.server.shutdown")
+    if func:
+        func()
+    else:
+        import os
+        os._exit(0)
+    return jsonify({"status": "shutting_down"})
+
+
+@app.route("/api/db-jobs")
+def get_db_jobs_api():
+    """Get jobs from the database (the new way)."""
+    min_match = float(request.args.get("min_match", 0))
+    source = request.args.get("source", "")
+    location = request.args.get("location", "")
+    limit = int(request.args.get("limit", 200))
+    offset = int(request.args.get("offset", 0))
+
+    jobs = db.get_jobs(
+        min_match=min_match, source=source,
+        location=location, limit=limit, offset=offset,
+    )
+    dismissed = db.get_dismissed_job_ids()
+    # Filter out dismissed
+    jobs = [j for j in jobs if j["id"] not in dismissed]
+
+    total = db.get_job_count()
+    return jsonify({"jobs": jobs, "total": total})
+
+
+# ─── Helper: Sync scraped jobs to database ───────────────────────────────────
+
+def sync_jobs_to_db(jobs_list):
+    """Sync a list of JobPosting objects to the database."""
+    count = 0
+    for job in jobs_list:
+        try:
+            norm_url = normalize_url(job.url)
+            job_data = {
+                "title": job.title,
+                "company": job.company,
+                "location": job.location,
+                "url": job.url,
+                "normalized_url": norm_url,
+                "description": job.description,
+                "posted_date": str(job.posted_date or ""),
+                "source": job.source,
+                "job_type": job.job_type,
+                "salary": job.salary or "",
+                "tags": job.tags or [],
+                "quality": job.quality or {},
+            }
+            db.upsert_job(job_data)
+            count += 1
+        except Exception:
+            pass
+    return count
+
+
 # ─── Startup ─────────────────────────────────────────────────────────────────
 
 def load_existing_data():
-    """Load cached jobs and existing CV on startup (no auto-compile)."""
+    """Load cached jobs and existing CV on startup."""
     config = get_config()
     cv_folder = get_cv_folder()
 
-    # Load cached jobs
+    # Load cached jobs into memory AND sync to DB
     try:
         jobs = get_cached_jobs(config=config)
         if jobs:
             state["jobs"] = jobs
-            print(f"  Loaded {len(jobs)} cached jobs")
+            synced = sync_jobs_to_db(jobs)
+            print(f"  Loaded {len(jobs)} cached jobs ({synced} synced to database)")
     except Exception:
         pass
+
+    # Check if DB has jobs even if cache doesn't
+    db_count = db.get_job_count()
+    if db_count > 0 and not state["jobs"]:
+        print(f"  Database has {db_count} jobs from previous sessions")
 
     # Load existing CV PDF (if any)
     if os.path.exists(cv_folder):
@@ -777,6 +1308,13 @@ def load_existing_data():
                 print(f"  Loaded CV: {pdfs[0]} (ATS: {state['ats_reports'][0].overall_score}/100)")
             except Exception as e:
                 print(f"  Warning: Could not load CV: {e}")
+
+    # Show profile status
+    profile = db.get_profile()
+    if profile.get("onboarding_complete"):
+        print(f"  Profile: {profile.get('name', 'User')} — onboarding complete")
+    else:
+        print(f"  Profile: onboarding not yet completed")
 
 
 def find_free_port(start=5001, end=5020):
@@ -794,7 +1332,7 @@ def find_free_port(start=5001, end=5020):
 
 if __name__ == "__main__":
     print("=" * 60)
-    print("  ATSchecker — Web Dashboard")
+    print("  ATSchecker — Job Hunting Command Center")
     print("=" * 60)
     load_existing_data()
     port = find_free_port()

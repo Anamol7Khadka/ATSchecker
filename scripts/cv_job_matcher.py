@@ -1,6 +1,10 @@
 """
-cv_job_matcher.py — CV ↔ Job Matching & Acceptance Likelihood Scoring.
-Uses TF-IDF cosine similarity, keyword overlap, and heuristic bonuses.
+cv_job_matcher.py -- CV <-> Job Matching & Acceptance Likelihood Scoring.
+
+v2: Profile-aware matching using the skill taxonomy for semantic understanding.
+Uses taxonomy-based skill extraction, synonym-aware matching, experience level
+detection, and profile preferences (desired roles, locations, job types).
+Falls back to TF-IDF when descriptions are rich enough.
 """
 
 import re
@@ -11,26 +15,59 @@ from typing import Dict, List, Optional, Set
 
 import yaml
 from rapidfuzz import fuzz
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
 
 from cv_parser import CVData
 from scrapers.base import JobPosting
+
+# New: taxonomy-based skill matching
+from skill_taxonomy import (
+    extract_skills_from_text,
+    skills_match_score,
+    ExtractedSkill,
+)
+
+# Try importing profile system (may not be available in standalone mode)
+try:
+    import sys
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    from profile import detect_experience_level
+    PROFILE_AVAILABLE = True
+except ImportError:
+    PROFILE_AVAILABLE = False
 
 
 @dataclass
 class MatchResult:
     job: JobPosting
-    overall_score: float  # 0–100
-    keyword_score: float  # 0–100
-    tfidf_score: float  # 0–100
-    role_type_bonus: float
-    location_bonus: float
-    language_penalty: float
+    overall_score: float  # 0-100
+    skill_score: float  # 0-100  (taxonomy-based)
+    role_score: float  # 0-100  (how well title matches desired roles)
+    location_score: float  # 0-100  (location preference match)
+    type_score: float  # 0-100  (job type match)
+    language_penalty: float  # negative
+    experience_fit: float  # 0-100  (experience level match)
     confidence: str  # "Low", "Medium", "High", "Very High"
     matched_skills: List[str] = field(default_factory=list)
     missing_skills: List[str] = field(default_factory=list)
+    match_reasons: List[str] = field(default_factory=list)
     warnings: List[str] = field(default_factory=list)
+
+    # Backward compatibility aliases
+    @property
+    def keyword_score(self) -> float:
+        return self.skill_score
+
+    @property
+    def tfidf_score(self) -> float:
+        return self.role_score
+
+    @property
+    def role_type_bonus(self) -> float:
+        return self.type_score * 0.15
+
+    @property
+    def location_bonus(self) -> float:
+        return self.location_score * 0.1
 
     def to_dict(self) -> dict:
         return {
@@ -39,13 +76,21 @@ class MatchResult:
             "location": self.job.location,
             "url": self.job.url,
             "source": self.job.source,
+            "posted_date": self.job.posted_date or "",
             "overall_score": round(self.overall_score, 1),
-            "keyword_score": round(self.keyword_score, 1),
-            "tfidf_score": round(self.tfidf_score, 1),
+            "skill_score": round(self.skill_score, 1),
+            "role_score": round(self.role_score, 1),
+            "location_score": round(self.location_score, 1),
+            "type_score": round(self.type_score, 1),
+            "experience_fit": round(self.experience_fit, 1),
             "confidence": self.confidence,
             "matched_skills": self.matched_skills,
             "missing_skills": self.missing_skills,
+            "match_reasons": self.match_reasons,
             "warnings": self.warnings,
+            # Backward compat
+            "keyword_score": round(self.skill_score, 1),
+            "tfidf_score": round(self.role_score, 1),
         }
 
 
@@ -57,9 +102,9 @@ class SkillsGapAnalysis:
     top_missing: List[str] = field(default_factory=list)
 
 
-# ─────────────────────────────────────────────────────────────
-# Keyword extraction
-# ─────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------
+# Config loading (backward compat)
+# -----------------------------------------------------------------
 
 def _load_config_from_project_root() -> dict:
     project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -80,143 +125,82 @@ def _matching_config(config: Optional[dict]) -> dict:
     return matching if isinstance(matching, dict) else {}
 
 
+# -----------------------------------------------------------------
+# Skill extraction (now taxonomy-powered)
+# -----------------------------------------------------------------
+
 def extract_job_skills(text: str, config: Optional[dict] = None) -> Set[str]:
-    """Extract technical skills mentioned in a job description."""
-    text_lower = text.lower()
-    found = set()
-    matching = _matching_config(config)
-    skill_bank = matching.get("tech_keywords", [])
-    if not isinstance(skill_bank, list):
-        return found
-
-    for skill in [str(item).strip().lower() for item in skill_bank if str(item).strip()]:
-        if len(skill) <= 2:
-            if re.search(r"\b" + re.escape(skill) + r"\b", text_lower):
-                found.add(skill)
-        else:
-            if skill in text_lower:
-                found.add(skill)
-    return found
+    """Extract technical skills mentioned in a job description using taxonomy."""
+    extracted = extract_skills_from_text(text, source="job")
+    return set(e.canonical.lower() for e in extracted)
 
 
-def detect_german_requirement(text: str, config: Optional[dict] = None) -> tuple[bool, str]:
+# -----------------------------------------------------------------
+# German language detection
+# -----------------------------------------------------------------
+
+_GERMAN_REQUIRED_PATTERNS = [
+    re.compile(r"deutsch(?:kenntnisse|e?\s+sprach)?\s*(?:auf\s+)?(?:niveau\s*)?([abc][12])", re.IGNORECASE),
+    re.compile(r"german\s+(?:language\s+)?(?:level\s+)?([abc][12])", re.IGNORECASE),
+    re.compile(r"flie[ss\u00df]end(?:e[srmn]?)?\s+deutsch", re.IGNORECASE),
+    re.compile(r"deutsch\s+(?:als\s+)?muttersprach", re.IGNORECASE),
+    re.compile(r"verhandlungssicher(?:e[srmn]?)?\s+deutsch", re.IGNORECASE),
+    re.compile(r"sehr\s+gute?\s+deutsch", re.IGNORECASE),
+    re.compile(r"gute?\s+deutsch", re.IGNORECASE),
+]
+
+_GERMAN_PREFERRED_PATTERNS = [
+    re.compile(r"german\s+(?:is\s+)?(?:a\s+)?(?:plus|advantage|asset|beneficial)", re.IGNORECASE),
+    re.compile(r"deutsch(?:kenntnisse)?\s+(?:w[aue]ren?|sind?)\s+(?:von\s+)?vorteil", re.IGNORECASE),
+    re.compile(r"ideally\s+(?:also\s+)?(?:speaking?\s+)?german", re.IGNORECASE),
+]
+
+_LEVEL_MAP = {"a1": 1, "a2": 2, "b1": 3, "b2": 4, "c1": 5, "c2": 6}
+
+
+def detect_german_requirement(text: str, config: Optional[dict] = None) -> tuple:
     """
     Detect if job requires German language proficiency.
-    Returns (requires_german, detected_level).
+    Returns (requires_german: bool, detected_level: str).
     """
-    text_lower = text.lower()
-    matching = _matching_config(config)
-    german_patterns = matching.get("german_patterns", [])
-    preferred_phrases = matching.get("preferred_german_phrases", [])
-    if not isinstance(german_patterns, list):
-        german_patterns = []
-    if not isinstance(preferred_phrases, list):
-        preferred_phrases = []
+    text_check = text[:3000]  # Only check first 3000 chars for efficiency
 
-    for pattern in german_patterns:
-        match = re.search(pattern, text_lower)
+    # Check hard requirements
+    for pattern in _GERMAN_REQUIRED_PATTERNS:
+        match = pattern.search(text_check)
         if match:
-            matched_text = match.group()
-            # Try to detect level
-            level_match = re.search(r"[bc][12]", matched_text)
-            level = level_match.group().upper() if level_match else "B2+"
-            return True, level
+            # Try to extract specific level
+            level_match = re.search(r"[abc][12]", match.group(), re.IGNORECASE)
+            if level_match:
+                return True, level_match.group().upper()
+            # "fliessend" / "verhandlungssicher" implies C1
+            if any(kw in match.group().lower() for kw in ["flie", "verhandlung", "muttersprac"]):
+                return True, "C1"
+            if "sehr gut" in match.group().lower():
+                return True, "B2"
+            if "gut" in match.group().lower():
+                return True, "B1"
+            return True, "B2"  # Default assumption
 
-    # Also check for basic mentions
-    if "german" in text_lower or "deutsch" in text_lower:
-        # Check context
-        for phrase in [str(p).lower() for p in preferred_phrases]:
-            if phrase in text_lower:
-                return True, "preferred"
+    # Check preferred/nice-to-have
+    for pattern in _GERMAN_PREFERRED_PATTERNS:
+        if pattern.search(text_check):
+            return True, "preferred"
+
+    # Loose check: entire description in German?
+    german_word_count = len(re.findall(r"\b(?:und|oder|die|das|der|mit|von|ist|als|bei|auf|aus|nach)\b", text_check.lower()))
+    if german_word_count > 10:
+        # Description is in German -> likely requires German
+        return True, "B1"
 
     return False, ""
-
-
-# ─────────────────────────────────────────────────────────────
-# Matching functions
-# ─────────────────────────────────────────────────────────────
-
-def compute_keyword_score(cv_skills: Set[str], job_skills: Set[str]) -> tuple[float, List[str], List[str]]:
-    """
-    Compute keyword overlap score between CV skills and job requirements.
-    Returns (score, matched_skills, missing_skills).
-    """
-    if not job_skills:
-        return 50.0, [], []  # No keywords to match → neutral score
-
-    matched = cv_skills & job_skills
-    missing = job_skills - cv_skills
-
-    # Score based on coverage ratio, with a slight boost for high overlap
-    coverage = len(matched) / len(job_skills) if job_skills else 0
-    score = min(100, coverage * 100 * 1.1)  # 10% boost
-
-    return score, sorted(matched), sorted(missing)
-
-
-def compute_tfidf_score(cv_text: str, job_text: str) -> float:
-    """Compute TF-IDF cosine similarity between CV and job description."""
-    if not cv_text.strip() or not job_text.strip():
-        return 0.0
-
-    try:
-        vectorizer = TfidfVectorizer(
-            stop_words="english",
-            max_features=5000,
-            ngram_range=(1, 2),
-        )
-        tfidf_matrix = vectorizer.fit_transform([cv_text, job_text])
-        sim = cosine_similarity(tfidf_matrix[0:1], tfidf_matrix[1:2])[0][0]
-        return min(100, sim * 100 * 2)  # Scale up since CV vs. job desc typically have low cos-sim
-    except Exception:
-        return 0.0
-
-
-def compute_tfidf_scores_batch(cv_text: str, job_texts: List[str]) -> List[float]:
-    """Compute TF-IDF cosine scores for all jobs against one CV in a single fit/transform."""
-    if not cv_text.strip() or not job_texts:
-        return [0.0 for _ in job_texts]
-
-    try:
-        vectorizer = TfidfVectorizer(
-            stop_words="english",
-            max_features=5000,
-            ngram_range=(1, 2),
-        )
-        docs = [cv_text] + job_texts
-        tfidf_matrix = vectorizer.fit_transform(docs)
-        sims = cosine_similarity(tfidf_matrix[0:1], tfidf_matrix[1:])[0]
-        return [min(100, float(sim) * 100 * 2) for sim in sims]
-    except Exception:
-        return [0.0 for _ in job_texts]
-
-
-def compute_role_type_bonus(job: JobPosting, target_types: List[str]) -> float:
-    """Bonus if job type matches target role types."""
-    if not target_types:
-        return 0.0
-
-    job_text = f"{job.title} {job.job_type} {job.description}".lower()
-    for jt in target_types:
-        if jt.lower() in job_text:
-            return 10.0  # +10 bonus
-    return 0.0
-
-
-def compute_location_bonus(job: JobPosting, target_cities: List[str]) -> float:
-    """Bonus if job is in one of the target cities."""
-    job_loc = job.location.lower()
-    for city in target_cities:
-        if city.lower() in job_loc:
-            return 5.0  # +5 bonus
-    return 0.0
 
 
 def compute_language_penalty(
     job: JobPosting,
     current_german_level: str = "A2",
     config: Optional[dict] = None,
-) -> tuple[float, List[str]]:
+) -> tuple:
     """
     Penalty if job requires German proficiency above current level.
     Returns (penalty, warnings).
@@ -230,27 +214,188 @@ def compute_language_penalty(
     if not requires_german:
         return 0.0, []
 
-    # Level hierarchy
-    matching = _matching_config(config)
-    levels = matching.get("language_level_map", {})
-    if not isinstance(levels, dict) or not levels:
-        levels = {"a1": 1, "a2": 2, "b1": 3, "b2": 4, "c1": 5, "c2": 6}
-    current = levels.get(current_german_level.lower(), 2)
+    current = _LEVEL_MAP.get(current_german_level.lower(), 2)
 
     if required_level == "preferred":
         return -5.0, [f"German preferred (you have {current_german_level})"]
 
-    required = levels.get(required_level.lower(), 4)  # Default B2 if unclear
+    required = _LEVEL_MAP.get(required_level.lower(), 4)
 
     if current >= required:
         return 0.0, []
     else:
         gap = required - current
         penalty = gap * 8  # -8 per level gap
-        level_name = required_level.upper()
         return -penalty, [
-            f"Requires German {level_name} (you have {current_german_level} — {gap} level(s) gap)"
+            f"Requires German {required_level.upper()} (you have {current_german_level} -- {gap} level gap)"
         ]
+
+
+# -----------------------------------------------------------------
+# Score components
+# -----------------------------------------------------------------
+
+def compute_skill_score(
+    cv_skill_names: List[str], job_text: str
+) -> tuple:
+    """
+    Taxonomy-aware skill matching.
+    Returns (score 0-100, matched_skills, missing_skills, reasons).
+    """
+    # Extract skills from job description
+    job_skills_extracted = extract_skills_from_text(job_text, source="job")
+    job_skill_names = [e.canonical.lower() for e in job_skills_extracted]
+
+    if not job_skill_names:
+        # No skills detected in job -> can't score, return neutral
+        return 50.0, [], [], ["No specific skills detected in job description"]
+
+    # Use taxonomy semantic matching
+    score, matched, missing = skills_match_score(cv_skill_names, job_skill_names)
+
+    reasons = []
+    if matched:
+        reasons.append(f"Skills match: {', '.join(matched[:5])}")
+    if missing:
+        reasons.append(f"Consider learning: {', '.join(missing[:3])}")
+
+    return score, matched, missing, reasons
+
+
+def compute_role_score(
+    job: JobPosting,
+    desired_roles: List[str],
+    cv_skill_names: List[str],
+) -> tuple:
+    """
+    How well does the job title/description match desired roles?
+    Returns (score 0-100, reasons).
+    """
+    if not desired_roles:
+        return 50.0, []  # No preference -> neutral
+
+    job_text = f"{job.title} {job.job_type or ''}".lower()
+    best_score = 0
+    best_role = ""
+
+    for role in desired_roles:
+        # Fuzzy match role against title
+        ratio = fuzz.token_set_ratio(role.lower(), job_text)
+        if ratio > best_score:
+            best_score = ratio
+            best_role = role
+
+    # Also check for skill-based role inference
+    # e.g., if job mentions "ETL", "Airflow", "data pipeline" -> likely data engineering
+    job_full = f"{job.title} {job.description[:500]}".lower()
+    role_skill_boost = 0
+    for role in desired_roles:
+        role_lower = role.lower()
+        # Direct mention of role in description
+        if role_lower in job_full:
+            role_skill_boost = max(role_skill_boost, 20)
+
+    score = min(100, best_score + role_skill_boost)
+    reasons = []
+    if best_score > 60:
+        reasons.append(f"Title matches desired role: {best_role}")
+    elif best_score > 40:
+        reasons.append(f"Partial role match: {best_role}")
+
+    return score, reasons
+
+
+def compute_location_score(
+    job: JobPosting, desired_locations: List[str]
+) -> tuple:
+    """
+    Score based on location preference match.
+    Returns (score 0-100, reasons).
+    """
+    if not desired_locations:
+        return 50.0, []  # No preference
+
+    job_loc = job.location.lower()
+
+    # Check for remote
+    if "remote" in job_loc:
+        return 90.0, ["Remote position"]
+
+    for loc in desired_locations:
+        if loc.lower() in job_loc:
+            return 100.0, [f"In preferred location: {loc}"]
+
+    # Check for Germany at least
+    if "germany" in job_loc or "deutschland" in job_loc:
+        return 40.0, ["In Germany, but not preferred city"]
+
+    return 20.0, ["Location does not match preferences"]
+
+
+def compute_type_score(
+    job: JobPosting, desired_types: List[str]
+) -> tuple:
+    """
+    Score based on job type match (Werkstudent, Thesis, etc.)
+    Returns (score 0-100, reasons).
+    """
+    if not desired_types:
+        return 50.0, []
+
+    job_text = f"{job.title} {job.job_type or ''} {job.description[:300]}".lower()
+
+    for jt in desired_types:
+        if jt.lower() in job_text:
+            return 100.0, [f"Job type matches: {jt}"]
+
+    # Check for related types
+    type_aliases = {
+        "werkstudent": ["working student", "studentische hilfskraft", "student job"],
+        "working student": ["werkstudent", "studentische hilfskraft"],
+        "internship": ["praktikum", "intern"],
+        "praktikum": ["internship", "intern"],
+        "master thesis": ["masterarbeit", "abschlussarbeit", "thesis"],
+        "masterarbeit": ["master thesis", "abschlussarbeit", "thesis"],
+    }
+
+    for jt in desired_types:
+        aliases = type_aliases.get(jt.lower(), [])
+        for alias in aliases:
+            if alias in job_text:
+                return 90.0, [f"Job type matches (alias): {jt}"]
+
+    return 20.0, ["Job type does not match preferences"]
+
+
+def compute_experience_fit(
+    job: JobPosting, user_experience_level: str = "entry"
+) -> tuple:
+    """
+    Does the job's experience requirement match the user's level?
+    Returns (score 0-100, reasons).
+    """
+    if not PROFILE_AVAILABLE:
+        return 70.0, []
+
+    job_text = f"{job.title} {job.description[:500]}"
+    job_exp = detect_experience_level(job_text)
+    job_level = job_exp["level"]
+
+    if job_level == "unknown":
+        return 70.0, []  # Can't determine, assume moderate fit
+
+    level_map = {"entry": 1, "mid": 2, "senior": 3}
+    user_val = level_map.get(user_experience_level, 1)
+    job_val = level_map.get(job_level, 1)
+
+    if user_val == job_val:
+        return 100.0, [f"Experience level matches: {job_level}"]
+    elif user_val > job_val:
+        return 80.0, [f"You may be overqualified ({user_experience_level} for {job_level} role)"]
+    else:
+        gap = job_val - user_val
+        score = max(20, 100 - gap * 35)
+        return score, [f"Requires {job_level} level (you are {user_experience_level})"]
 
 
 def get_confidence_label(score: float) -> str:
@@ -264,9 +409,9 @@ def get_confidence_label(score: float) -> str:
     return "Low"
 
 
-# ─────────────────────────────────────────────────────────────
-# Main matcher
-# ─────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------
+# Main matcher (v2 — profile-aware)
+# -----------------------------------------------------------------
 
 def match_cv_to_jobs(
     cv: CVData,
@@ -276,14 +421,22 @@ def match_cv_to_jobs(
     current_german_level: str = "A2",
     config: Optional[dict] = None,
     cv_skills_override: Optional[List[str]] = None,
+    # v2: profile-aware parameters
+    desired_roles: Optional[List[str]] = None,
+    experience_level: Optional[str] = None,
+    profile_skills: Optional[List[dict]] = None,
 ) -> List[MatchResult]:
     """
     Match a CV against a list of job postings and score acceptance likelihood.
-
+    
+    v2 additions:
+    - desired_roles: what roles the user actually wants
+    - experience_level: "entry", "mid", "senior"
+    - profile_skills: skills from the profile (with categories + levels)
+    
     Returns list of MatchResult sorted by overall score (descending).
     """
     cfg = config if isinstance(config, dict) else _load_config_from_project_root()
-    matching = _matching_config(cfg)
 
     if target_cities is None:
         raw_cities = cfg.get("cities", []) if isinstance(cfg, dict) else []
@@ -292,49 +445,77 @@ def match_cv_to_jobs(
         raw_types = cfg.get("job_types", []) if isinstance(cfg, dict) else []
         target_types = [str(t).strip() for t in raw_types if str(t).strip()]
     if not current_german_level:
+        matching = _matching_config(cfg)
         current_german_level = str(matching.get("default_german_level", "A2"))
+    if desired_roles is None:
+        desired_roles = []
+    if experience_level is None:
+        experience_level = "entry"
 
-    cv_skill_source = cv_skills_override if isinstance(cv_skills_override, list) and cv_skills_override else cv.skills
-    cv_skills_set = set(s.lower() for s in cv_skill_source)
+    # Build CV skill list from taxonomy
+    if profile_skills:
+        # Use profile skills (user-confirmed + extracted)
+        cv_skill_names = [s.get("name", "").lower() for s in profile_skills if isinstance(s, dict)]
+    elif cv_skills_override:
+        cv_skill_names = [s.lower() for s in cv_skills_override]
+    else:
+        # Extract from CV text using taxonomy
+        extracted = extract_skills_from_text(cv.raw_text, source="cv")
+        cv_skill_names = [e.canonical.lower() for e in extracted]
+
     results = []
 
-    job_texts = [f"{job.title} {job.description} {' '.join(job.tags)}".strip() for job in jobs]
-    tfidf_scores = compute_tfidf_scores_batch(cv.raw_text, job_texts)
+    # Weights for the final score
+    W_SKILL = 0.35    # Skill match is most important
+    W_ROLE = 0.25     # Role relevance
+    W_TYPE = 0.15     # Job type match
+    W_LOCATION = 0.10 # Location preference
+    W_EXPERIENCE = 0.10  # Experience level
+    W_TITLE_SIM = 0.05   # Fuzzy title similarity
 
-    def _score_one(index: int, job: JobPosting, job_text: str) -> MatchResult:
-        job_skills = extract_job_skills(job_text, config=cfg)
+    def _score_one(job: JobPosting) -> MatchResult:
+        job_text = f"{job.title} {job.description} {' '.join(job.tags or [])}".strip()
+        all_reasons = []
 
-        # 1. Keyword overlap score (weight: 40%)
-        kw_score, matched, missing = compute_keyword_score(cv_skills_set, job_skills)
+        # 1. Taxonomy-powered skill matching (35%)
+        skill_score, matched, missing, skill_reasons = compute_skill_score(
+            cv_skill_names, job_text
+        )
+        all_reasons.extend(skill_reasons)
 
-        # 2. TF-IDF similarity (weight: 30%)
-        tfidf_score = tfidf_scores[index] if index < len(tfidf_scores) else 0.0
+        # 2. Role relevance (25%)
+        role_score, role_reasons = compute_role_score(job, desired_roles, cv_skill_names)
+        all_reasons.extend(role_reasons)
 
-        # 3. Role type bonus (weight: flat bonus)
-        role_bonus = compute_role_type_bonus(job, target_types)
+        # 3. Job type match (15%)
+        type_score, type_reasons = compute_type_score(job, target_types)
+        all_reasons.extend(type_reasons)
 
-        # 4. Location bonus (weight: flat bonus)
-        loc_bonus = compute_location_bonus(job, target_cities)
+        # 4. Location preference (10%)
+        loc_score, loc_reasons = compute_location_score(job, target_cities)
+        all_reasons.extend(loc_reasons)
 
-        # 5. German language penalty
+        # 5. Experience level fit (10%)
+        exp_score, exp_reasons = compute_experience_fit(job, experience_level)
+        all_reasons.extend(exp_reasons)
+
+        # 6. Title fuzzy similarity bonus (5%)
+        title_query = " ".join(desired_roles[:3] + cv_skill_names[:5]) if desired_roles else " ".join(cv_skill_names[:8])
+        title_sim = fuzz.token_set_ratio(title_query, job.title)
+
+        # 7. German language penalty (subtracted from total)
         lang_penalty, warnings = compute_language_penalty(
-            job,
-            current_german_level,
-            config=cfg,
+            job, current_german_level, config=cfg,
         )
 
-        title_match = fuzz.token_set_ratio(
-            " ".join(target_types + cv_skill_source[:5]),
-            job.title,
-        )
-
+        # Weighted total
         overall = (
-            kw_score * 0.40
-            + tfidf_score * 0.30
-            + title_match * 0.20
-            + 10
-            + role_bonus
-            + loc_bonus
+            skill_score * W_SKILL
+            + role_score * W_ROLE
+            + type_score * W_TYPE
+            + loc_score * W_LOCATION
+            + exp_score * W_EXPERIENCE
+            + title_sim * W_TITLE_SIM
             + lang_penalty
         )
         overall = max(0, min(100, overall))
@@ -342,25 +523,27 @@ def match_cv_to_jobs(
         return MatchResult(
             job=job,
             overall_score=overall,
-            keyword_score=kw_score,
-            tfidf_score=tfidf_score,
-            role_type_bonus=role_bonus,
-            location_bonus=loc_bonus,
+            skill_score=skill_score,
+            role_score=role_score,
+            location_score=loc_score,
+            type_score=type_score,
             language_penalty=lang_penalty,
+            experience_fit=exp_score,
             confidence=get_confidence_label(overall),
             matched_skills=matched,
             missing_skills=missing,
+            match_reasons=all_reasons,
             warnings=warnings,
         )
 
     workers = min(16, max(1, len(jobs)))
     with ThreadPoolExecutor(max_workers=workers) as pool:
-        future_to_idx = {
-            pool.submit(_score_one, idx, job, job_texts[idx]): idx
-            for idx, job in enumerate(jobs)
-        }
-        for future in as_completed(future_to_idx):
-            results.append(future.result())
+        futures = {pool.submit(_score_one, job): job for job in jobs}
+        for future in as_completed(futures):
+            try:
+                results.append(future.result())
+            except Exception:
+                pass
 
     # Sort by overall score descending
     results.sort(key=lambda r: r.overall_score, reverse=True)
@@ -411,17 +594,20 @@ if __name__ == "__main__":
     for i, m in enumerate(matches[:10], 1):
         print(f"\n{i}. {m.job.title} @ {m.job.company}")
         print(f"   Score: {m.overall_score:.1f}% ({m.confidence})")
+        print(f"   Skills: {m.skill_score:.0f}% | Role: {m.role_score:.0f}% | Type: {m.type_score:.0f}%")
         print(f"   Location: {m.job.location} | Source: {m.job.source}")
         if m.matched_skills:
             print(f"   Matched: {', '.join(m.matched_skills[:8])}")
         if m.missing_skills:
             print(f"   Missing: {', '.join(m.missing_skills[:5])}")
+        if m.match_reasons:
+            print(f"   Reasons: {'; '.join(m.match_reasons[:3])}")
         if m.warnings:
-            print(f"   ⚠ {'; '.join(m.warnings)}")
+            print(f"   Warnings: {'; '.join(m.warnings)}")
 
     if gap.top_missing:
         print(f"\n{'='*60}")
-        print("Skills Gap — Most requested skills you're missing:")
+        print("Skills Gap -- Most requested skills you're missing:")
         for skill in gap.top_missing[:10]:
             count = gap.missing_skills_frequency[skill]
-            print(f"  • {skill} (requested in {count} jobs)")
+            print(f"  - {skill} (requested in {count} jobs)")

@@ -58,34 +58,114 @@ class GoogleJobsScraper(BaseScraper):
         "profile",
     ]
 
+    # Comprehensive list of German job sites, company portals, and niche boards
     JOB_SITES = [
+        # ── Major Job Boards ──
         "linkedin.com/jobs",
         "stepstone.de",
         "indeed.de",
         "de.indeed.com",
         "xing.com/jobs",
-        "jobteaser.com",
         "glassdoor.de",
         "monster.de",
         "karriere.de",
-        "jobs.meinestadt.de",
-        "greenjobs.de",
         "jobware.de",
+        "jobs.meinestadt.de",
         "yourfirm.de",
-        "academics.de",
+        "stellenanzeigen.de",
+        "kimeta.de",
+        "stellenwerk.de",
+        "jobvector.de",
+        "heyjobs.co",
+
+        # ── Student / Graduate Focused ──
+        "jobteaser.com",
+        "absolventa.de",
+        "campusjaeger.de",
+        "praktikum.info",
+        "staufenbiel.de",
+        "trainee.de",
+        "squeaker.net",
+        "e-fellows.net",
+        "werkstudentenjob.com",
+
+        # ── Tech / IT Specific ──
+        "get-in-it.de",
         "get-in-engineering.de",
+        "germantechjobs.de",
+        "berlinstartupjobs.com",
+        "t3n.de/jobs",
+        "stackoverflow.com/jobs",
+        "github.com/jobs",
+        "wellfound.com",
+        "weworkremotely.com",
+        "4scotty.com",
+        "honeypot.io",
+        "talent.io",
+        "remotive.com",
+
+        # ── Research / Academic ──
+        "academics.de",
         "researchgate.net/jobs",
-        "ovgu.de",
+        "euraxess.ec.europa.eu",
+
+        # ── Top German Employer Portals ──
+        "bosch.de/karriere",
+        "siemens.com/careers",
+        "sap.com/careers",
+        "bmw.de/karriere",
+        "careers.volkswagen.com",
+        "continental-jobs.com",
+        "basf.com/careers",
+        "telekom.com/karriere",
+        "allianz.com/careers",
+        "bayer.com/careers",
+        "infineon.com/careers",
+        "zalando.de/jobs",
+        "deliveryhero.com/careers",
+        "hella.com/careers",
+        "thyssenkrupp.com/careers",
+        "kuehne-nagel.com/careers",
+        "henkel.de/karriere",
+
+        # ── Research Institutes ──
         "fraunhofer.de",
         "dlr.de",
+        "helmholtz.de",
+        "mpg.de",  # Max Planck
+        "leibniz-gemeinschaft.de",
+
+        # ── Public Sector ──
+        "arbeitsagentur.de",
+        "bund.de",
+        "interamt.de",
+
+        # ── Regional / Niche ──
+        "greenjobs.de",
+        "nachhaltigejobs.de",
+        "ingenieur.de/jobs",
+        "chemie.de/jobs",
     ]
 
+    # Diverse query templates for maximum coverage
     QUERY_TEMPLATES = [
+        # Standard job search
         "{jt} {kw} {city} Germany job",
+        "{jt} {kw} {city} Germany Stellenangebot",
         "{jt} {kw} {city} Germany career",
+        # Thesis-specific
         "{jt} {kw} {city} Germany thesis",
-        "{kw} {city} Germany machine learning engineer",
-        "{kw} {city} Germany data science working student",
+        "{jt} {kw} {city} Masterarbeit",
+        # Role-specific
+        "{kw} {city} Germany working student",
+        "{kw} {city} Germany Werkstudent",
+        # Site-targeted searches (finds jobs on specific major sites via DDG)
+        "site:linkedin.com/jobs {jt} {kw} {city}",
+        "site:stepstone.de {jt} {kw} {city}",
+        "site:indeed.de {jt} {kw} {city}",
+        # Company career pages
+        "{kw} {city} karriere Stellenangebot",
+        "{kw} {city} careers open position",
     ]
 
     def scrape(

@@ -121,30 +121,81 @@ scraping:
 
   # Known company targets and university/research portals for deep discovery.
   company_domains:
+    # ── Automotive / Mobility ──
     - bosch.com
-    - sap.com
-    - siemens.com
     - bmwgroup.com
     - volkswagen-group.com
-    - zalando.com
-    - celonis.com
-    - infineon.com
-    - deutschebahn.com
     - mercedes-benz.com
+    - continental-careers.com
+    - zf.com
+    - porsche.com
+    - audi.com
+    - man.eu
+    - schaeffler.com
+    - webasto.com
+    # ── Tech / Software ──
+    - sap.com
+    - siemens.com
+    - celonis.com
+    - zalando.com
+    - deliveryhero.com
+    - hellofresh.com
+    - flixbus.com
+    - n26.com
+    - trade-republic.com
+    - personio.com
+    - contentful.com
+    - messagebird.com
+    - adjust.com
+    # ── Industrial / Engineering ──
+    - infineon.com
+    - thyssenkrupp.com
+    - basf.com
+    - henkel.com
+    - evonik.com
+    - covestro.com
+    - wacker.com
+    # ── Telecom / Finance / Insurance ──
+    - deutschebahn.com
+    - telekom.com
+    - allianz.com
+    - commerzbank.de
+    - deutschebank.com
+    - bayer.com
+    # ── Consulting / IT Services ──
+    - accenture.com
+    - capgemini.com
+    - thoughtworks.com
+    - reply.com
   university_portals:
     - ovgu.de
     - jobteaser.com
     - daad.de
     - dlr.de
     - fraunhofer.de
+    - tu-berlin.de
+    - fu-berlin.de
+    - hu-berlin.de
+    - tum.de
+    - kit.edu
+    - rwth-aachen.de
+    - tu-dresden.de
+    - uni-heidelberg.de
+    - lmu.de
+    - helmholtz.de
+    - mpg.de
 
   # Priority order for scrapers (first = highest priority)
+  # API-based scrapers first (most reliable), then search aggregators, then Selenium
   scraper_priority:
+    - arbeitsagentur
     - arbeitnow
+    - jooble
     - adzuna
+    - rss_feeds
     - remoteok
-    - company_portals
     - google_jobs
+    - company_portals
     - linkedin
     - indeed
     - stepstone
@@ -154,6 +205,9 @@ scraping:
   # Adzuna API (free — register at https://developer.adzuna.com/)
   # adzuna_app_id: "YOUR_APP_ID"
   # adzuna_app_key: "YOUR_APP_KEY"
+
+  # Jooble API (free — register at https://jooble.org/api/about)
+  # jooble_api_key: "YOUR_API_KEY"
 
 # Opportunity discovery tuning (dashboard/report sections)
 opportunity:

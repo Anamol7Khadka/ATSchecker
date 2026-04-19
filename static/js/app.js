@@ -1,539 +1,803 @@
-/* ───────────────────────────────────────────────────────────
-   ATSchecker — Dashboard JavaScript
-   ─────────────────────────────────────────────────────────── */
+/**
+ * ATSchecker v2 — Frontend Application
+ * SPA-style navigation, API integration, onboarding wizard
+ */
 
-const SORT_STORAGE_PREFIX = 'ats-sort:';
+// ─── State ──────────────────────────────────────────────────
+const state = {
+  currentPage: 'dashboard',
+  profile: null,
+  jobs: [],
+  matches: [],
+  applications: [],
+  wizardStep: 1,
+  jobsPage: 1,
+  jobsPerPage: 25,
+  jobFilter: 'all',
+  jobSearch: '',
+  jobSort: 'score',
+};
 
-function getActiveTabName() {
-    const active = document.querySelector('.tab-content.active');
-    return active ? active.id.replace('tab-', '') : 'all';
-}
-
-// ─── Tab Switching ───
-function switchTab(tabName, el) {
-    document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
-    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-    document.getElementById('tab-' + tabName).classList.add('active');
-    el.classList.add('active');
-    applyStoredSort(tabName);
-    filterJobs();
-}
-
-// ─── Filter Jobs ───
-function filterJobs() {
-    const city = document.getElementById('filter-city').value.toLowerCase();
-    const source = document.getElementById('filter-source').value.toLowerCase();
-    const search = document.getElementById('filter-search').value.toLowerCase();
-    const activeTab = document.querySelector('.tab-content.active');
-
-    if (!activeTab) return;
-
-    activeTab.querySelectorAll('.job-row').forEach(row => {
-        const rCity = (row.dataset.city || '').toLowerCase();
-        const rSource = (row.dataset.source || '').toLowerCase();
-        const rTitle = (row.dataset.title || '').toLowerCase();
-        const rCompany = (row.dataset.company || '').toLowerCase();
-
-        let show = true;
-        if (city && !rCity.includes(city)) show = false;
-        if (source && !rSource.includes(source)) show = false;
-        if (search && !rTitle.includes(search) && !rCompany.includes(search)) show = false;
-        row.style.display = show ? '' : 'none';
+// ─── API Helpers ────────────────────────────────────────────
+async function api(url, options = {}) {
+  try {
+    const resp = await fetch(url, {
+      headers: { 'Content-Type': 'application/json', ...options.headers },
+      ...options,
     });
+    if (!resp.ok) throw new Error(`API ${resp.status}`);
+    return await resp.json();
+  } catch (err) {
+    console.error(`API error: ${url}`, err);
+    throw err;
+  }
+}
 
-    activeTab.querySelectorAll('.group-body').forEach(groupBody => {
-        const hasVisibleRows = Array.from(groupBody.querySelectorAll('.job-row')).some(row => row.style.display !== 'none');
-        groupBody.style.display = hasVisibleRows ? '' : 'none';
+// ─── Toast ──────────────────────────────────────────────────
+function toast(message, type = 'success') {
+  const container = document.getElementById('toast-container');
+  const el = document.createElement('div');
+  el.className = `toast toast-${type}`;
+  const icon = type === 'success' ? '&#10003;' : '&#9888;';
+  el.innerHTML = `<span>${icon}</span> ${message}`;
+  container.appendChild(el);
+  setTimeout(() => { el.style.opacity = '0'; setTimeout(() => el.remove(), 300); }, 3500);
+}
+
+// ─── Page Navigation ────────────────────────────────────────
+function switchPage(page) {
+  state.currentPage = page;
+  document.querySelectorAll('.page-content').forEach(p => p.classList.add('hidden'));
+  document.querySelectorAll('.nav-links a').forEach(a => a.classList.remove('active'));
+
+  const pageEl = document.getElementById(`page-${page}`);
+  const navEl = document.getElementById(`nav-${page}`);
+  if (pageEl) pageEl.classList.remove('hidden');
+  if (navEl) navEl.classList.add('active');
+
+  // Load data for the page
+  if (page === 'jobs') loadJobs();
+  if (page === 'pipeline') loadPipeline();
+  if (page === 'profile') loadProfile();
+  if (page === 'dashboard') loadDashboard();
+}
+
+// ─── Dashboard ──────────────────────────────────────────────
+async function loadDashboard() {
+  try {
+    const [summary, matchData] = await Promise.all([
+      api('/api/pipeline-summary'),
+      api('/api/matches?limit=8'),
+    ]);
+
+    // Stats
+    document.getElementById('stat-total-jobs').textContent = summary.total_jobs || 0;
+    document.getElementById('stat-ats').textContent = summary.ats_score || '--';
+
+    const pipeline = summary.pipeline || {};
+    const applied = (pipeline.applied || 0) + (pipeline.interview || 0) + (pipeline.offer || 0);
+    document.getElementById('stat-applied').textContent = applied;
+
+    // Top matches
+    const matches = matchData.matches || [];
+    const strongCount = matches.filter(m => m.overall_score >= 55).length;
+    document.getElementById('stat-matches').textContent = strongCount || '--';
+
+    const listEl = document.getElementById('top-matches-list');
+    if (matches.length === 0) {
+      listEl.innerHTML = `<div class="empty-state"><div class="empty-icon">&#128270;</div><p>No matches yet. Run a job search first!</p></div>`;
+      return;
+    }
+
+    listEl.innerHTML = matches.slice(0, 6).map(m => {
+      const scoreClass = m.overall_score >= 75 ? 'high' : m.overall_score >= 35 ? 'medium' : 'low';
+      const skills = (m.matched_skills || []).slice(0, 4).map(s => `<span class="skill-tag">${esc(s)}</span>`).join('');
+      return `
+        <div class="job-card">
+          <div class="score-ring ${scoreClass}">${Math.round(m.overall_score)}</div>
+          <div class="job-info">
+            <div class="job-title"><a href="${esc(m.url)}" target="_blank">${esc(m.job_title)}</a></div>
+            <div class="job-meta">
+              <span>${esc(m.company)}</span>
+              <span>${esc(m.location)}</span>
+              <span>${esc(m.source)}</span>
+            </div>
+            ${skills ? `<div class="job-skills">${skills}</div>` : ''}
+          </div>
+          <div class="job-actions">
+            <button class="btn btn-ghost btn-sm" onclick="saveJob(${m.job_id || 0})" title="Save">&#128278;</button>
+          </div>
+        </div>`;
+    }).join('');
+
+    // Skills gap
+    loadSkillsGap(matchData.gap_analysis);
+  } catch (err) {
+    console.error('Dashboard load error:', err);
+  }
+}
+
+function loadSkillsGap(gap) {
+  const el = document.getElementById('skills-gap-content');
+  if (!gap || !gap.top_missing || gap.top_missing.length === 0) {
+    el.innerHTML = '<p class="text-sm text-muted">Complete your profile and run a search to see skills gap analysis.</p>';
+    return;
+  }
+  const items = gap.top_missing.slice(0, 8).map(skill => {
+    const freq = gap.missing_skills_frequency[skill] || 0;
+    const pct = Math.min(100, freq * 5);
+    return `
+      <div class="mb-md">
+        <div class="flex justify-between text-sm mb-sm">
+          <span>${esc(skill)}</span>
+          <span class="text-muted">${freq} jobs</span>
+        </div>
+        <div class="progress-bar">
+          <div class="progress-fill" style="width: ${pct}%"></div>
+        </div>
+      </div>`;
+  }).join('');
+  el.innerHTML = items;
+}
+
+// ─── Jobs Page ──────────────────────────────────────────────
+async function loadJobs() {
+  try {
+    const data = await api(`/api/matches?limit=200`);
+    state.matches = data.matches || [];
+    renderJobs();
+  } catch {
+    document.getElementById('jobs-list').innerHTML = '<div class="empty-state"><p>Failed to load jobs</p></div>';
+  }
+}
+
+function renderJobs() {
+  let filtered = [...state.matches];
+
+  // Apply filter
+  if (state.jobFilter === 'high') filtered = filtered.filter(m => m.overall_score >= 75);
+  else if (state.jobFilter === 'medium') filtered = filtered.filter(m => m.overall_score >= 35 && m.overall_score < 75);
+  else if (state.jobFilter === 'saved') filtered = filtered.filter(m => m.saved);
+
+  // Apply search
+  if (state.jobSearch) {
+    const q = state.jobSearch.toLowerCase();
+    filtered = filtered.filter(m =>
+      (m.job_title || '').toLowerCase().includes(q) ||
+      (m.company || '').toLowerCase().includes(q) ||
+      (m.matched_skills || []).some(s => s.toLowerCase().includes(q))
+    );
+  }
+
+  // Apply sort
+  if (state.jobSort === 'score') filtered.sort((a, b) => b.overall_score - a.overall_score);
+  else if (state.jobSort === 'date') filtered.sort((a, b) => (b.posted_date || '').localeCompare(a.posted_date || ''));
+  else if (state.jobSort === 'company') filtered.sort((a, b) => (a.company || '').localeCompare(b.company || ''));
+
+  // Pagination
+  const start = (state.jobsPage - 1) * state.jobsPerPage;
+  const page = filtered.slice(start, start + state.jobsPerPage);
+
+  document.getElementById('jobs-showing').textContent = `Showing ${start + 1}-${Math.min(start + state.jobsPerPage, filtered.length)} of ${filtered.length} jobs`;
+  document.getElementById('jobs-prev').disabled = state.jobsPage <= 1;
+  document.getElementById('jobs-next').disabled = start + state.jobsPerPage >= filtered.length;
+
+  const listEl = document.getElementById('jobs-list');
+  if (page.length === 0) {
+    listEl.innerHTML = '<div class="empty-state"><div class="empty-icon">&#128270;</div><p>No jobs match your filters</p></div>';
+    return;
+  }
+
+  listEl.innerHTML = page.map(m => {
+    const scoreClass = m.overall_score >= 75 ? 'high' : m.overall_score >= 35 ? 'medium' : 'low';
+    const matchedSkills = (m.matched_skills || []).slice(0, 5).map(s => `<span class="skill-tag">${esc(s)}</span>`).join('');
+    const missingSkills = (m.missing_skills || []).slice(0, 3).map(s => `<span class="skill-tag missing">${esc(s)}</span>`).join('');
+    const reasons = (m.match_reasons || []).slice(0, 2).map(r => esc(r)).join(' &middot; ');
+    const warnings = (m.warnings || []).map(w => `<span class="badge badge-warning">${esc(w)}</span>`).join(' ');
+
+    return `
+      <div class="job-card">
+        <div class="score-ring ${scoreClass}">${Math.round(m.overall_score)}</div>
+        <div class="job-info">
+          <div class="job-title"><a href="${esc(m.url)}" target="_blank">${esc(m.job_title)}</a></div>
+          <div class="job-meta">
+            <span>${esc(m.company)}</span>
+            <span>${esc(m.location)}</span>
+            <span class="badge badge-info">${esc(m.source)}</span>
+            ${m.posted_date ? `<span>${esc(m.posted_date.split('T')[0])}</span>` : ''}
+          </div>
+          <div class="job-skills mt-sm">${matchedSkills}${missingSkills}</div>
+          ${reasons ? `<div class="text-xs text-muted mt-sm">${reasons}</div>` : ''}
+          ${warnings ? `<div class="mt-sm">${warnings}</div>` : ''}
+        </div>
+        <div class="job-actions">
+          <button class="btn btn-accent btn-sm" onclick="saveJob(${m.job_id || 0})" title="Save to pipeline">&#128278;</button>
+          <button class="btn btn-ghost btn-sm" onclick="dismissJob(${m.job_id || 0})" title="Not interested">&#10006;</button>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+// ─── Pipeline ───────────────────────────────────────────────
+async function loadPipeline() {
+  try {
+    const data = await api('/api/applications');
+    state.applications = data.applications || [];
+    renderPipeline();
+  } catch {
+    toast('Failed to load pipeline', 'error');
+  }
+}
+
+function renderPipeline() {
+  const statuses = ['saved', 'applied', 'interview', 'offer', 'rejected'];
+  let total = 0;
+
+  statuses.forEach(status => {
+    const items = state.applications.filter(a => a.status === status);
+    total += items.length;
+
+    document.getElementById(`count-${status}`).textContent = items.length;
+
+    const col = document.getElementById(`col-${status}`);
+    if (items.length === 0) {
+      col.innerHTML = '<div class="text-xs text-muted text-center" style="padding: 16px;">No items</div>';
+      return;
+    }
+
+    col.innerHTML = items.map(app => `
+      <div class="pipeline-item" onclick="showAppDetail(${app.id})">
+        <div class="truncate" style="font-weight: 500;">${esc(app.title)}</div>
+        <div class="text-xs text-muted">${esc(app.company)}</div>
+      </div>
+    `).join('');
+  });
+
+  document.getElementById('pipeline-total').textContent = `${total} applications`;
+}
+
+// ─── Profile Page ───────────────────────────────────────────
+async function loadProfile() {
+  try {
+    const data = await api('/api/profile');
+    state.profile = data;
+
+    // Fill form
+    document.getElementById('profile-name').value = data.name || '';
+    document.getElementById('profile-email').value = data.email || '';
+    document.getElementById('profile-german').value = data.german_level || 'A2';
+    document.getElementById('profile-experience').value = data.experience_level || 'entry';
+
+    // CV status
+    const cvStatus = document.getElementById('cv-status-text');
+    if (cvStatus) {
+      const p = data.profile || {};
+      if (p.cv_file_name) {
+        cvStatus.textContent = `Current: ${p.cv_file_name}`;
+        cvStatus.style.color = 'var(--accent)';
+      } else if (data.skills && data.skills.length > 0) {
+        cvStatus.textContent = `${data.skills.length} skills loaded from CV`;
+        cvStatus.style.color = 'var(--accent)';
+      }
+    }
+
+    // Roles chips — merge options with any custom roles already saved
+    const roleOptions = data.role_options || [];
+    const savedRoles = data.desired_roles || [];
+    const allRoles = [...new Set([...roleOptions, ...savedRoles])];
+    renderChips('roles-chips', allRoles, savedRoles);
+
+    // Locations chips — merge options with any custom locations already saved
+    const cityOptions = data.city_options || [];
+    const savedLocations = data.desired_locations || [];
+    const allLocations = [...new Set([...cityOptions, ...savedLocations])];
+    renderChips('locations-chips', allLocations, savedLocations);
+
+    // Types chips — merge options with any custom types
+    const typeOptions = data.type_options || [];
+    const savedTypes = data.desired_types || [];
+    const allTypes = [...new Set([...typeOptions, ...savedTypes])];
+    renderChips('types-chips', allTypes, savedTypes);
+
+    // Skills
+    const skills = data.skills || [];
+    document.getElementById('skills-count').textContent = `${skills.length} skills detected`;
+    const skillsEl = document.getElementById('skills-chips');
+    skillsEl.innerHTML = skills.map(s => {
+      const name = typeof s === 'string' ? s : (s.name || s.canonical || '');
+      return `<button class="chip selected" onclick="toggleChip(this)">${esc(name)}</button>`;
+    }).join('');
+  } catch {
+    toast('Failed to load profile', 'error');
+  }
+}
+
+async function saveProfile() {
+  try {
+    const selectedRoles = getSelectedChips('roles-chips');
+    const selectedLocations = getSelectedChips('locations-chips');
+    const selectedTypes = getSelectedChips('types-chips');
+    const selectedSkills = getSelectedChips('skills-chips');
+
+    // Build skills array for saving
+    const skillDicts = selectedSkills.map(s => ({ name: s, confirmed: true }));
+
+    await api('/api/profile', {
+      method: 'PUT',
+      body: JSON.stringify({
+        name: document.getElementById('profile-name').value,
+        email: document.getElementById('profile-email').value,
+        german_level: document.getElementById('profile-german').value,
+        experience_level: document.getElementById('profile-experience').value,
+        desired_roles: selectedRoles,
+        desired_locations: selectedLocations,
+        desired_types: selectedTypes,
+        skills: skillDicts,
+      }),
     });
+    toast('Profile saved!');
+  } catch {
+    toast('Failed to save profile', 'error');
+  }
 }
 
-// ─── Sort Table ───
-function setGroupBy(value) {
-    const url = new URL(window.location.href);
-    url.searchParams.set('group', value);
-    window.location.assign(url.toString());
+// ─── Chips Helper ───────────────────────────────────────────
+function renderChips(containerId, options, selected) {
+  const container = document.getElementById(containerId);
+  const selectedSet = new Set(Array.isArray(selected) ? selected : []);
+  container.innerHTML = options.map(opt => {
+    const isSelected = selectedSet.has(opt);
+    return `<button class="chip ${isSelected ? 'selected' : ''}" onclick="toggleChip(this)">${esc(opt)}</button>`;
+  }).join('');
 }
 
-function parseDateValue(value) {
-    if (!value) return 0;
-    const text = String(value).trim();
-    if (/^\d+$/.test(text)) {
-        let ts = parseInt(text, 10);
-        if (text.length === 13) ts = Math.floor(ts / 1000);
-        return ts * 1000;
-    }
-    const parsed = Date.parse(text);
-    return Number.isNaN(parsed) ? 0 : parsed;
+function toggleChip(el) {
+  el.classList.toggle('selected');
 }
 
-function compareDatasetValues(a, b, type, dir) {
-    if (type === 'number') {
-        const left = parseFloat(a || '0');
-        const right = parseFloat(b || '0');
-        return dir === 'asc' ? left - right : right - left;
-    }
-    if (type === 'date') {
-        const left = parseDateValue(a);
-        const right = parseDateValue(b);
-        return dir === 'asc' ? left - right : right - left;
-    }
-    const left = String(a || '');
-    const right = String(b || '');
-    return dir === 'asc' ? left.localeCompare(right) : right.localeCompare(left);
+function getSelectedChips(containerId) {
+  const chips = document.querySelectorAll(`#${containerId} .chip.selected`);
+  return Array.from(chips).map(c => c.textContent.trim());
 }
 
-function updateSortIndicators(table, field, dir) {
-    table.querySelectorAll('th').forEach(th => {
-        th.classList.remove('sorted-asc', 'sorted-desc');
-    });
-    table.querySelectorAll('th').forEach(th => {
-        const onclick = th.getAttribute('onclick') || '';
-        if (onclick.includes("'" + field + "'")) {
-            th.classList.add(dir === 'asc' ? 'sorted-asc' : 'sorted-desc');
-        }
-    });
+function addCustomChip(containerId, inputId) {
+  const input = document.getElementById(inputId);
+  const value = (input.value || '').trim();
+  if (!value) return;
+
+  const container = document.getElementById(containerId);
+  // Check if already exists
+  const existing = Array.from(container.querySelectorAll('.chip')).map(c => c.textContent.trim().toLowerCase());
+  if (existing.includes(value.toLowerCase())) {
+    toast('Already in the list', 'error');
+    return;
+  }
+
+  const chip = document.createElement('button');
+  chip.className = 'chip selected';
+  chip.textContent = value;
+  chip.onclick = () => toggleChip(chip);
+  container.appendChild(chip);
+  input.value = '';
+  toast(`Added "${value}"`);
 }
 
-function renumberTable(table) {
-    if (!table) return;
-    let index = 1;
-    table.querySelectorAll('tbody.group-body').forEach(body => {
-        body.querySelectorAll('tr.job-row').forEach(row => {
-            const firstCell = row.cells[0];
-            if (!firstCell) return;
-            firstCell.textContent = index;
-            row.dataset.row = String(index);
-            index += 1;
-        });
-    });
+// ─── Profile CV Upload ─────────────────────────────────────
+function setupProfileCVUpload() {
+  const zone = document.getElementById('profile-cv-upload-zone');
+  const input = document.getElementById('profile-cv-file-input');
+  if (!zone || !input) return;
 
-    if (index === 1) {
-        table.querySelectorAll('tbody tr.job-row').forEach(row => {
-            const firstCell = row.cells[0];
-            if (!firstCell) return;
-            firstCell.textContent = index;
-            row.dataset.row = String(index);
-            index += 1;
-        });
-    }
+  zone.addEventListener('click', () => input.click());
+  zone.addEventListener('dragover', (e) => { e.preventDefault(); zone.classList.add('dragover'); });
+  zone.addEventListener('dragleave', () => zone.classList.remove('dragover'));
+  zone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    zone.classList.remove('dragover');
+    if (e.dataTransfer.files.length) uploadProfileCV(e.dataTransfer.files[0]);
+  });
+  input.addEventListener('change', () => { if (input.files.length) uploadProfileCV(input.files[0]); });
 }
 
-function saveSortState(tabName, field, type, dir) {
-    localStorage.setItem(SORT_STORAGE_PREFIX + tabName, JSON.stringify({ field, type, dir }));
-}
+async function uploadProfileCV(file) {
+  if (!file.name.toLowerCase().endsWith('.pdf')) {
+    toast('Please upload a PDF file', 'error');
+    return;
+  }
 
-function loadSortState(tabName) {
-    try {
-        return JSON.parse(localStorage.getItem(SORT_STORAGE_PREFIX + tabName) || 'null');
-    } catch (_) {
-        return null;
-    }
-}
+  document.getElementById('profile-cv-upload-zone').style.display = 'none';
+  document.getElementById('profile-cv-upload-status').classList.remove('hidden');
 
-function applySort(tableId, field, type, dir, persist) {
-    const table = document.getElementById(tableId);
-    if (!table) return;
+  const formData = new FormData();
+  formData.append('cv', file);
 
-    const groupedBodies = Array.from(table.querySelectorAll('tbody.group-body'));
+  try {
+    const resp = await fetch('/api/profile/upload-cv', { method: 'POST', body: formData });
+    const data = await resp.json();
 
-    const sortRows = function (container, rows) {
-        rows.sort((a, b) => compareDatasetValues(a.dataset[field], b.dataset[field], type, dir));
-        rows.forEach(row => container.appendChild(row));
-    };
+    document.getElementById('profile-cv-upload-status').classList.add('hidden');
+    const result = document.getElementById('profile-cv-upload-result');
+    result.classList.remove('hidden');
 
-    if (groupedBodies.length) {
-        groupedBodies.forEach(body => {
-            sortRows(body, Array.from(body.querySelectorAll('tr.job-row')));
-        });
+    if (data.status === 'success') {
+      const newSkills = (data.skills || data.extracted?.skills || []);
+      const skillTags = newSkills.slice(0, 10).map(s => {
+        const name = typeof s === 'string' ? s : (s.name || '');
+        return `<span class="skill-tag">${esc(name)}</span>`;
+      }).join('');
+      result.innerHTML = `
+        <div class="card" style="background: rgba(16,185,129,0.05); border-color: rgba(16,185,129,0.2);">
+          <h4 class="text-accent">&#10003; CV Updated Successfully</h4>
+          <p class="text-sm text-muted mt-sm">${newSkills.length} skills extracted. Your profile has been updated.</p>
+          <div class="job-skills mt-sm">${skillTags}</div>
+        </div>`;
+      // Refresh the skills display
+      loadProfile();
+      toast('CV uploaded and skills refreshed!');
     } else {
-        const tbody = table.querySelector('tbody');
-        if (!tbody) return;
-        sortRows(tbody, Array.from(tbody.querySelectorAll('tr.job-row')));
+      result.innerHTML = `<div class="card" style="border-color: var(--danger);"><p>Failed: ${esc(data.error || 'Unknown error')}</p></div>`;
+      document.getElementById('profile-cv-upload-zone').style.display = '';
     }
-
-    table.dataset.sortField = field;
-    table.dataset.sortDir = dir;
-
-    if (persist) {
-        saveSortState(tableId.replace('table-', ''), field, type, dir);
-    }
-    renumberTable(table);
-    updateSortIndicators(table, field, dir);
-    filterJobs();
+  } catch {
+    document.getElementById('profile-cv-upload-status').classList.add('hidden');
+    document.getElementById('profile-cv-upload-zone').style.display = '';
+    toast('Upload failed', 'error');
+  }
 }
 
-function applyStoredSort(tabName) {
-    const tableId = 'table-' + tabName;
-    const table = document.getElementById(tableId);
-    if (!table) return;
-
-    const state = loadSortState(tabName);
-    if (state && state.field && state.type && state.dir) {
-        applySort(tableId, state.field, state.type, state.dir, false);
-        return;
-    }
-    updateSortIndicators(table, table.dataset.sortField || '', table.dataset.sortDir || '');
+// ─── Job Actions ────────────────────────────────────────────
+async function saveJob(jobId) {
+  if (!jobId) { toast('Cannot save: no job ID', 'error'); return; }
+  try {
+    await api('/api/applications', { method: 'POST', body: JSON.stringify({ job_id: jobId, status: 'saved' }) });
+    toast('Job saved to pipeline!');
+  } catch { toast('Failed to save', 'error'); }
 }
 
-function sortTable(tableId, field, type, defaultDir) {
-    const table = document.getElementById(tableId);
-    if (!table) return;
-
-    let dir = defaultDir || 'desc';
-    if (table.dataset.sortField === field) {
-        dir = table.dataset.sortDir === 'asc' ? 'desc' : 'asc';
-    }
-    applySort(tableId, field, type, dir, true);
+async function dismissJob(jobId) {
+  if (!jobId) return;
+  try {
+    await api('/api/jobs/dismiss', { method: 'POST', body: JSON.stringify({ job_id: jobId }) });
+    toast('Job dismissed');
+    state.matches = state.matches.filter(m => m.job_id !== jobId);
+    renderJobs();
+  } catch { toast('Failed to dismiss', 'error'); }
 }
 
-// ─── Add City from Dropdown ───
-function addCity() {
-    const dd = document.getElementById('city-dropdown');
-    const val = dd.value;
-    if (!val) return;
-
-    // Skip if already exists
-    const existing = Array.from(document.querySelectorAll('input[name="city"]'));
-    if (existing.some(cb => cb.value === val)) {
-        dd.value = '';
-        return;
-    }
-
-    const container = document.getElementById('city-checkboxes');
-    const label = document.createElement('label');
-    label.className = 'checkbox-inline city-added';
-    label.innerHTML = '<input type="checkbox" name="city" value="' + escHtml(val) + '" checked> ' + escHtml(val);
-    container.appendChild(label);
-    dd.value = '';
+function showAppDetail(appId) {
+  // TODO: modal with notes, status change
+  toast(`Application #${appId} detail coming soon`);
 }
 
-// ─── Compile CV ───
-function compileCv() {
-    const btn = document.getElementById('btn-compile');
-    const statusEl = document.getElementById('compile-status');
+// ─── Scraping ───────────────────────────────────────────────
+async function startScraping() {
+  const btn = document.getElementById('btn-scrape');
+  btn.disabled = true;
+  btn.innerHTML = '<div class="spinner"></div> Scraping...';
 
-    btn.disabled = true;
-    btn.innerHTML = '<span class="spinner"></span> Compiling...';
-    statusEl.style.display = 'block';
-    statusEl.className = 'status-msg';
-    statusEl.textContent = 'Compiling LaTeX...';
+  try {
+    const resp = await fetch('/compile', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    });
 
-    fetch('/api/compile', { method: 'POST' })
-        .then(r => r.json())
-        .then(data => {
-            if (data.status === 'started') {
-                pollStatus('compile');
-            } else {
-                statusEl.className = 'status-msg error';
-                statusEl.textContent = data.error || 'Failed';
-                btn.disabled = false;
-                btn.innerHTML = 'Compile LaTeX';
-            }
-        })
-        .catch(err => {
-            statusEl.className = 'status-msg error';
-            statusEl.textContent = err.message;
-            btn.disabled = false;
-            btn.innerHTML = 'Compile LaTeX';
-        });
-}
-
-// ─── Scrape Jobs ───
-let _liveJobsInterval = null;
-let _logsInterval = null;
-
-function startScrape(useCache) {
-    const btn = document.getElementById('btn-scrape');
-    const statusEl = document.getElementById('scrape-status');
-    const logEl = document.getElementById('scrape-log');
-
-    const cityChecks = Array.from(document.querySelectorAll('input[name="city"]:checked'));
-    const selectedCities = cityChecks.map(c => c.value);
-
-    if (!useCache && selectedCities.length === 0) {
-        alert('Please select at least one city.');
-        return;
+    if (resp.status === 409) {
+      toast('Scraping is already running, please wait...', 'error');
+      // Still poll for completion
+    } else if (!resp.ok) {
+      throw new Error(`HTTP ${resp.status}`);
+    } else {
+      toast('Job search started! This may take a few minutes...');
     }
 
-    btn.disabled = true;
-    btn.innerHTML = '<span class="spinner"></span> Scraping...';
-    statusEl.style.display = 'block';
-    statusEl.className = 'status-msg';
-    statusEl.textContent = useCache ? 'Loading cached jobs...' : 'Starting job search (this may take several minutes)...';
-
-    if (logEl) {
-        logEl.style.display = 'block';
-        logEl.textContent = '';
+    // Poll for scrape completion
+    let attempts = 0;
+    const maxAttempts = 120; // up to 6 minutes
+    while (attempts < maxAttempts) {
+      await new Promise(r => setTimeout(r, 3000));
+      attempts++;
+      try {
+        const status = await api('/api/status');
+        const scrapeStatus = status.scrape || {};
+        if (!scrapeStatus.running) {
+          // Scraping finished
+          toast('Job search complete! Refreshing...');
+          break;
+        }
+        // Update button with progress
+        const msg = scrapeStatus.message || 'Scraping...';
+        btn.innerHTML = `<div class="spinner"></div> ${msg}`;
+      } catch { break; }
     }
 
-    // Show live jobs container for fresh scrapes
-    const liveContainer = document.getElementById('live-jobs-container');
-    if (liveContainer && !useCache) {
-        liveContainer.style.display = 'block';
-        document.getElementById('live-jobs-body').innerHTML = '';
-        document.getElementById('live-job-count').textContent = '0';
+    // Refresh dashboard data
+    const summary = await api('/api/pipeline-summary');
+    document.getElementById('stat-total-jobs').textContent = summary.total_jobs || 0;
+    document.getElementById('job-count-badge').textContent = `${summary.total_jobs} jobs`;
+    loadDashboard();
+
+  } catch (err) {
+    toast('Failed to start scraping: ' + err.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '&#128269; Scrape';
+  }
+}
+
+// ─── Onboarding Wizard ──────────────────────────────────────
+function showWizard() {
+  document.getElementById('onboarding-wizard').classList.remove('hidden');
+}
+
+function hideWizard() {
+  document.getElementById('onboarding-wizard').classList.add('hidden');
+}
+
+function wizardBack() {
+  if (state.wizardStep > 1) {
+    state.wizardStep--;
+    updateWizardUI();
+  }
+}
+
+async function wizardNext() {
+  if (state.wizardStep === 1) {
+    // Validate CV uploaded
+    const result = document.getElementById('cv-upload-result');
+    if (result.classList.contains('hidden')) {
+      toast('Please upload your CV first', 'error');
+      return;
     }
-
-    fetch('/api/scrape', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ use_cache: useCache, cities: selectedCities }),
-    })
-        .then(r => r.json())
-        .then(data => {
-            if (data.status === 'started') {
-                pollStatus('scrape');
-                pollLogs();
-                if (!useCache) pollLiveJobs();
-            } else {
-                statusEl.className = 'status-msg error';
-                statusEl.textContent = data.error || 'Failed';
-                btn.disabled = false;
-                btn.innerHTML = 'Scrape Fresh Jobs';
-            }
-        })
-        .catch(err => {
-            statusEl.className = 'status-msg error';
-            statusEl.textContent = err.message;
-            btn.disabled = false;
-            btn.innerHTML = 'Scrape Fresh Jobs';
-        });
+    state.wizardStep = 2;
+    await loadWizardStep2();
+  } else if (state.wizardStep === 2) {
+    state.wizardStep = 3;
+    await loadWizardStep3();
+  } else if (state.wizardStep === 3) {
+    await completeOnboarding();
+    return;
+  }
+  updateWizardUI();
 }
 
-// ─── Upload PDF ───
-document.addEventListener('DOMContentLoaded', function () {
-    formatAllPostedDates();
-    applyStoredSort(getActiveTabName());
-    filterJobs();
+function updateWizardUI() {
+  // Update step indicators
+  document.querySelectorAll('.wizard-step').forEach(el => {
+    const step = parseInt(el.dataset.step);
+    el.classList.remove('active', 'done');
+    if (step === state.wizardStep) el.classList.add('active');
+    else if (step < state.wizardStep) el.classList.add('done');
+  });
 
-    const form = document.getElementById('upload-form');
-    if (form) {
-        form.addEventListener('submit', function (e) {
-            e.preventDefault();
-            const fileInput = document.getElementById('pdf-upload');
-            if (!fileInput.files.length) return;
+  // Show/hide step bodies
+  for (let i = 1; i <= 3; i++) {
+    const body = document.getElementById(`wizard-step-${i}`);
+    if (body) body.classList.toggle('hidden', i !== state.wizardStep);
+  }
 
-            const formData = new FormData();
-            formData.append('file', fileInput.files[0]);
+  // Back button
+  document.getElementById('wizard-back').disabled = state.wizardStep <= 1;
 
-            const statusEl = document.getElementById('compile-status');
-            statusEl.style.display = 'block';
-            statusEl.className = 'status-msg';
-            statusEl.textContent = 'Uploading and analyzing PDF...';
+  // Next button text
+  const nextBtn = document.getElementById('wizard-next');
+  nextBtn.innerHTML = state.wizardStep === 3 ? '&#10003; Complete Setup' : 'Next &#8594;';
+  if (state.wizardStep === 3) nextBtn.classList.add('btn-accent');
+  else nextBtn.classList.remove('btn-accent');
+}
 
-            fetch('/api/upload', { method: 'POST', body: formData })
-                .then(r => r.json())
-                .then(data => {
-                    if (data.status === 'success') {
-                        statusEl.className = 'status-msg success';
-                        statusEl.textContent = data.message;
-                        setTimeout(() => location.reload(), 1500);
-                    } else {
-                        statusEl.className = 'status-msg error';
-                        statusEl.textContent = data.error || 'Upload failed';
-                    }
-                })
-                .catch(err => {
-                    statusEl.className = 'status-msg error';
-                    statusEl.textContent = err.message;
-                });
-        });
+async function loadWizardStep2() {
+  try {
+    const data = await api('/api/profile');
+    const skills = data.skills || [];
+    const container = document.getElementById('wizard-skills-chips');
+    container.innerHTML = skills.map(s => {
+      const name = typeof s === 'string' ? s : (s.name || '');
+      return `<button class="chip selected" onclick="toggleChip(this)">${esc(name)}</button>`;
+    }).join('');
+
+    if (skills.length === 0) {
+      container.innerHTML = '<p class="text-muted">No skills detected yet. You can add them manually on the profile page.</p>';
     }
-});
-
-// ─── Poll Background Tasks ───
-function pollStatus(task) {
-    const interval = setInterval(() => {
-        fetch('/api/status')
-            .then(r => r.json())
-            .then(data => {
-                const info = data[task];
-                const statusEl = document.getElementById(task + '-status');
-                if (!statusEl) { clearInterval(interval); return; }
-
-                // Update navbar job count live
-                const jobsInd = document.getElementById('jobs-indicator');
-                if (jobsInd && data.job_count !== undefined) {
-                    jobsInd.textContent = 'Jobs: ' + data.job_count;
-                    jobsInd.className = 'status-badge ' + (data.job_count > 0 ? 'status-ok' : 'status-none');
-                }
-
-                if (info && !info.running) {
-                    clearInterval(interval);
-                    if (_logsInterval) { clearInterval(_logsInterval); _logsInterval = null; }
-                    statusEl.className = 'status-msg success';
-                    statusEl.textContent = info.message;
-
-                    // Re-enable scrape button
-                    var scrapeBtn = document.getElementById('btn-scrape');
-                    if (scrapeBtn) { scrapeBtn.disabled = false; scrapeBtn.innerHTML = 'Scrape Fresh Jobs'; }
-
-                    // Do one final live-jobs fetch, then stop polling
-                    if (_liveJobsInterval) {
-                        clearInterval(_liveJobsInterval);
-                        _liveJobsInterval = null;
-                        // Final fetch to grab any remaining jobs
-                        fetch('/api/jobs').then(r => r.json()).then(d => {
-                            _renderLiveBatch(d.jobs, true);
-                            // Show a refresh link instead of auto-reloading
-                            var note = document.getElementById('live-done-note');
-                            if (!note) {
-                                note = document.createElement('div');
-                                note.id = 'live-done-note';
-                                note.style.cssText = 'margin-top:10px;text-align:center;';
-                                var container = document.getElementById('live-jobs-container');
-                                if (container) container.appendChild(note);
-                            }
-                            note.innerHTML = '<span style="color:var(--accent-green);font-weight:600;">Scraping complete \u2014 ' + d.total + ' jobs found.</span> ' +
-                                '<button class="btn btn-sm btn-success" onclick="analyzeJobs()" style="margin-left:10px;">\u2728 Sort &amp; Analyze</button>' +
-                                '<button class="btn btn-sm btn-secondary" onclick="location.reload()" style="margin-left:6px;">Refresh page</button>';
-                        }).catch(() => { });
-                    } else {
-                        // Compile or cache-load — safe to reload
-                        setTimeout(() => location.reload(), 1500);
-                    }
-                } else if (info) {
-                    statusEl.textContent = info.message;
-                }
-            })
-            .catch(() => clearInterval(interval));
-    }, 2000);
+  } catch { /* ignore */ }
 }
 
-// ─── Poll Scrape Logs ───
-function pollLogs() {
-    const logEl = document.getElementById('scrape-log');
-    if (!logEl) return;
-    logEl.style.display = 'block';
-
-    const render = () => {
-        fetch('/api/scrape/logs')
-            .then(r => r.json())
-            .then(data => {
-                if (data.logs) {
-                    logEl.textContent = data.logs.join('\n');
-                    logEl.scrollTop = logEl.scrollHeight;
-                }
-            })
-            .catch(() => { });
-    };
-
-    render();
-    _logsInterval = setInterval(render, 2000);
-    setTimeout(() => { if (_logsInterval) clearInterval(_logsInterval); }, 10 * 60 * 1000);
+async function loadWizardStep3() {
+  try {
+    const data = await api('/api/profile');
+    renderChips('wizard-roles-chips', data.role_options || [], data.desired_roles || []);
+    renderChips('wizard-locations-chips', (data.city_options || []).slice(0, 20), data.desired_locations || []);
+    renderChips('wizard-types-chips', data.type_options || [], data.desired_types || []);
+  } catch { /* ignore */ }
 }
 
-// ─── Render a batch of jobs into the live table ───
-var _liveRenderedCount = 0;
+async function completeOnboarding() {
+  const btn = document.getElementById('wizard-next');
+  btn.disabled = true;
+  btn.innerHTML = '<div class="spinner"></div> Saving...';
 
-function _renderLiveBatch(jobs, fullReplace) {
-    var tbody = document.getElementById('live-jobs-body');
-    var countEl = document.getElementById('live-job-count');
-    if (!tbody || !countEl) return;
+  try {
+    const roles = getSelectedChips('wizard-roles-chips');
+    const locations = getSelectedChips('wizard-locations-chips');
+    const types = getSelectedChips('wizard-types-chips');
+    const skills = getSelectedChips('wizard-skills-chips');
 
-    if (fullReplace || jobs.length < _liveRenderedCount) {
-        // Server re-sorted or deduped — full redraw
-        tbody.innerHTML = '';
-        _liveRenderedCount = 0;
+    await api('/api/profile/complete-onboarding', {
+      method: 'POST',
+      body: JSON.stringify({
+        desired_roles: roles,
+        desired_locations: locations,
+        desired_types: types,
+        confirmed_skills: skills,
+        german_level: document.getElementById('wizard-german').value,
+        experience_level: document.getElementById('wizard-experience').value,
+      }),
+    });
+
+    toast('Profile setup complete! Welcome to ATSchecker &#127881;');
+    hideWizard();
+    loadDashboard();
+  } catch {
+    toast('Failed to save profile', 'error');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '&#10003; Complete Setup';
+  }
+}
+
+// ─── CV Upload ──────────────────────────────────────────────
+function setupCVUpload() {
+  const zone = document.getElementById('cv-upload-zone');
+  const input = document.getElementById('cv-file-input');
+  if (!zone || !input) return;
+
+  zone.addEventListener('click', () => input.click());
+  zone.addEventListener('dragover', (e) => { e.preventDefault(); zone.classList.add('dragover'); });
+  zone.addEventListener('dragleave', () => zone.classList.remove('dragover'));
+  zone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    zone.classList.remove('dragover');
+    if (e.dataTransfer.files.length) uploadCV(e.dataTransfer.files[0]);
+  });
+  input.addEventListener('change', () => { if (input.files.length) uploadCV(input.files[0]); });
+}
+
+async function uploadCV(file) {
+  if (!file.name.toLowerCase().endsWith('.pdf')) {
+    toast('Please upload a PDF file', 'error');
+    return;
+  }
+
+  document.getElementById('cv-upload-zone').classList.add('hidden');
+  document.getElementById('cv-upload-status').classList.remove('hidden');
+
+  const formData = new FormData();
+  formData.append('cv', file);
+
+  try {
+    const resp = await fetch('/api/profile/upload-cv', { method: 'POST', body: formData });
+    const data = await resp.json();
+
+    document.getElementById('cv-upload-status').classList.add('hidden');
+    const result = document.getElementById('cv-upload-result');
+    result.classList.remove('hidden');
+
+    if (data.status === 'success') {
+      const skills = (data.skills || []).slice(0, 8).map(s => `<span class="skill-tag">${esc(typeof s === 'string' ? s : s.name)}</span>`).join('');
+      result.innerHTML = `
+        <div class="card" style="background: rgba(16,185,129,0.05); border-color: rgba(16,185,129,0.2);">
+          <h4 class="text-accent">&#10003; CV Analyzed Successfully</h4>
+          <p class="text-sm text-muted mt-sm">${data.skills ? data.skills.length : 0} skills detected</p>
+          <div class="job-skills mt-sm">${skills}</div>
+        </div>`;
+    } else {
+      result.innerHTML = `<div class="card" style="border-color: var(--danger);"><p>Failed: ${esc(data.error || 'Unknown error')}</p></div>`;
+      document.getElementById('cv-upload-zone').classList.remove('hidden');
     }
-
-    for (var i = _liveRenderedCount; i < jobs.length; i++) {
-        var j = jobs[i];
-        var badges = '<span class="badge badge-source">' + escHtml(j.source) + '</span>';
-        if (j.recent) badges += ' <span class="badge badge-new">NEW</span>';
-        if (j.interesting) badges += ' <span class="badge badge-interesting">INTERESTING</span>';
-        if (j.precious) badges += ' <span class="badge badge-precious">PRECIOUS</span>';
-        if (j.quality_score) badges += ' <span class="badge badge-quality">Q' + escHtml(j.quality_score) + '</span>';
-        var matchCell = j.match > 0
-            ? '<span style="color:var(--accent-green);font-weight:600;">' + j.match + '%</span>'
-            : '<span style="color:var(--text-muted);">—</span>';
-        var tr = document.createElement('tr');
-        tr.innerHTML =
-            '<td>' + (i + 1) + '</td>' +
-            '<td><a href="/job/' + escHtml(j.id) + '" class="job-title-link">' + escHtml(j.title) + '</a></td>' +
-            '<td>' + escHtml(j.company) + '</td>' +
-            '<td>' + escHtml(j.location) + '</td>' +
-            '<td>' + badges + '</td>' +
-            '<td>' + matchCell + '</td>' +
-            '<td style="font-size:0.78rem;">' + escHtml(j.posted_date) + '</td>';
-        tbody.appendChild(tr);
-    }
-    _liveRenderedCount = jobs.length;
-    countEl.textContent = jobs.length;
+  } catch {
+    document.getElementById('cv-upload-status').classList.add('hidden');
+    document.getElementById('cv-upload-zone').classList.remove('hidden');
+    toast('Upload failed', 'error');
+  }
 }
 
-// ─── Poll Live Jobs (real-time updates during scrape) ───
-function pollLiveJobs() {
-    var container = document.getElementById('live-jobs-container');
-    if (!container) return;
-    _liveRenderedCount = 0;
+// ─── Event Listeners ────────────────────────────────────────
+function setupEventListeners() {
+  // Nav links
+  document.querySelectorAll('.nav-links a').forEach(link => {
+    link.addEventListener('click', (e) => {
+      e.preventDefault();
+      const page = link.dataset.page;
+      if (page) switchPage(page);
+    });
+  });
 
-    var render = function () {
-        fetch('/api/jobs')
-            .then(function (r) { return r.json(); })
-            .then(function (data) {
-                _renderLiveBatch(data.jobs, false);
-            })
-            .catch(function () { });
-    };
+  // Job search
+  const searchInput = document.getElementById('job-search-input');
+  if (searchInput) {
+    let debounce;
+    searchInput.addEventListener('input', () => {
+      clearTimeout(debounce);
+      debounce = setTimeout(() => { state.jobSearch = searchInput.value; state.jobsPage = 1; renderJobs(); }, 300);
+    });
+  }
 
-    render();
-    _liveJobsInterval = setInterval(render, 2000);
+  // Job sort
+  const sortSelect = document.getElementById('job-sort-select');
+  if (sortSelect) {
+    sortSelect.addEventListener('change', () => { state.jobSort = sortSelect.value; renderJobs(); });
+  }
+
+  // Filter chips
+  document.querySelectorAll('#job-filters .chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      document.querySelectorAll('#job-filters .chip').forEach(c => c.classList.remove('selected'));
+      chip.classList.add('selected');
+      state.jobFilter = chip.dataset.filter;
+      state.jobsPage = 1;
+      renderJobs();
+    });
+  });
+
+  // Pagination
+  document.getElementById('jobs-prev')?.addEventListener('click', () => { state.jobsPage--; renderJobs(); });
+  document.getElementById('jobs-next')?.addEventListener('click', () => { state.jobsPage++; renderJobs(); });
 }
 
-// ─── HTML-escape helper ───
-function escHtml(str) {
-    const d = document.createElement('div');
-    d.textContent = str || '';
-    return d.innerHTML;
+// ─── Utility ────────────────────────────────────────────────
+function esc(str) {
+  if (!str) return '';
+  const div = document.createElement('div');
+  div.textContent = String(str);
+  return div.innerHTML;
 }
 
-// ─── Sort & Analyze Jobs ───
-function analyzeJobs() {
-    var note = document.getElementById('live-done-note');
-    if (note) {
-        note.innerHTML = '<span class="spinner"></span> <span style="color:var(--accent-blue);">Analyzing and sorting jobs by match score + recency...</span>';
-    }
-    fetch('/api/analyze-jobs', { method: 'POST' })
-        .then(function (r) { return r.json(); })
-        .then(function (data) {
-            if (data.status === 'success') {
-                if (note) {
-                    note.innerHTML = '<span style="color:var(--accent-green);font-weight:600;">' + data.message + '</span>';
-                }
-                // Re-fetch sorted jobs and redraw the live table
-                fetch('/api/jobs').then(function (r) { return r.json(); }).then(function (d) {
-                    _renderLiveBatch(d.jobs, true);
-                    // Reload page after a brief delay to show full dashboard with match scores
-                    setTimeout(function () { location.reload(); }, 2000);
-                });
-            } else {
-                if (note) {
-                    note.innerHTML = '<span style="color:var(--accent-red);">' + (data.error || 'Analysis failed') + '</span>' +
-                        ' <button class="btn btn-sm btn-secondary" onclick="location.reload()" style="margin-left:6px;">Refresh page</button>';
-                }
-            }
-        })
-        .catch(function (err) {
-            if (note) {
-                note.innerHTML = '<span style="color:var(--accent-red);">Error: ' + escHtml(err.message) + '</span>' +
-                    ' <button class="btn btn-sm btn-secondary" onclick="location.reload()" style="margin-left:6px;">Refresh page</button>';
-            }
-        });
-}
-
-// ─── Safe Quit ───
+// Backward compat: safe quit
 function safeQuit() {
-    if (!confirm('Shut down the server? You will need to restart it to use the dashboard again.')) return;
-    fetch('/api/shutdown', { method: 'POST' })
-        .then(r => r.json())
-        .then(() => {
-            document.body.innerHTML = '<div style="text-align:center;padding:60px;color:#aaa;font-family:sans-serif;">' +
-                '<h1>Server stopped</h1><p>The port has been freed. You can close this tab.</p>' +
-                '<p style="margin-top:20px;font-size:0.85rem;color:#888;">To restart: <code>python app.py</code></p></div>';
-        })
-        .catch(() => {
-            document.body.innerHTML = '<div style="text-align:center;padding:60px;color:#aaa;font-family:sans-serif;">' +
-                '<h1>Server stopped</h1><p>You can close this tab.</p></div>';
-        });
+  if (confirm('Shut down the server?')) {
+    fetch('/quit', { method: 'POST' }).then(() => {
+      document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;"><h2>Server stopped. You can close this tab.</h2></div>';
+    });
+  }
 }
+
+// ─── Init ───────────────────────────────────────────────────
+async function init() {
+  setupEventListeners();
+  setupCVUpload();
+  setupProfileCVUpload();
+
+  // Check if onboarding needed
+  try {
+    const profile = await api('/api/profile');
+    state.profile = profile;
+    if (!profile.onboarding_complete) {
+      showWizard();
+
+      // If CV is already loaded (skills detected), auto-advance past step 1
+      if (profile.skills && profile.skills.length > 0) {
+        // Show success on step 1
+        document.getElementById('cv-upload-zone').classList.add('hidden');
+        const result = document.getElementById('cv-upload-result');
+        result.classList.remove('hidden');
+        const skills = profile.skills.slice(0, 8).map(s => {
+          const name = typeof s === 'string' ? s : (s.name || '');
+          return `<span class="skill-tag">${esc(name)}</span>`;
+        }).join('');
+        result.innerHTML = `
+          <div class="card" style="background: rgba(16,185,129,0.05); border-color: rgba(16,185,129,0.2);">
+            <h4 class="text-accent">&#10003; CV Already Loaded</h4>
+            <p class="text-sm text-muted mt-sm">${profile.skills.length} skills detected from your CV</p>
+            <div class="job-skills mt-sm">${skills}</div>
+          </div>`;
+      }
+    }
+  } catch { /* ignore */ }
+
+  // Load dashboard
+  loadDashboard();
+}
+
+// Expose functions globally
+window._app = { switchPage, startScraping, wizardBack, wizardNext, saveProfile, showWizard, addCustomChip };
+
+document.addEventListener('DOMContentLoaded', init);

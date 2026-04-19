@@ -3,34 +3,390 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}ATSchecker{% endblock %}</title>
+    <title>{% block title %}ATSchecker — Job Hunting Command Center{% endblock %}</title>
+    <meta name="description" content="AI-powered job hunting command center for Germany. CV analysis, smart matching, application tracking.">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    {% block head %}{% endblock %}
 </head>
 <body>
+    <!-- Toast notifications container -->
+    <div id="toast-container" class="toast-container"></div>
+
+    <!-- Navbar -->
     <nav class="navbar">
-        <div class="nav-brand">
-            <a href="/" style="text-decoration:none;display:flex;align-items:center;gap:8px;">
-                <span style="font-size:1.4rem;">&#9881;</span>
-                <h1>ATSchecker</h1>
-            </a>
-            <span class="nav-subtitle">CV Analysis &middot; Job Matching &middot; Cover Letter AI</span>
-        </div>
-        <div class="nav-actions">
-            <span id="cv-indicator" class="status-badge {{ 'status-ok' if cv_loaded else 'status-none' }}">
-                CV: {{ 'Loaded' if cv_loaded else 'None' }}
-            </span>
-            <span id="jobs-indicator" class="status-badge {{ 'status-ok' if job_count > 0 else 'status-none' }}">
-                Jobs: {{ job_count }}
-            </span>
-            <button class="btn btn-danger btn-sm" onclick="safeQuit()" title="Safely shut down the server and free the port">
-                &#9209; Quit
-            </button>
+        <div class="container navbar-inner">
+            <div class="navbar-brand">
+                <div class="logo-icon">&#9889;</div>
+                <span>ATSchecker</span>
+            </div>
+
+            <ul class="nav-links" id="nav-links">
+                <li><a href="#" data-page="dashboard" class="active" id="nav-dashboard">Dashboard</a></li>
+                <li><a href="#" data-page="jobs" id="nav-jobs">Jobs</a></li>
+                <li><a href="#" data-page="pipeline" id="nav-pipeline">Pipeline</a></li>
+                <li><a href="#" data-page="profile" id="nav-profile">Profile</a></li>
+            </ul>
+
+            <div class="flex items-center gap-sm">
+                <span class="badge badge-success" id="job-count-badge">{{ job_count }} jobs</span>
+                <button class="btn btn-ghost btn-sm" onclick="window._app.startScraping()" id="btn-scrape">
+                    &#128269; Scrape
+                </button>
+                <button class="btn btn-ghost btn-sm btn-danger" onclick="safeQuit()" title="Shut down server">
+                    &#9724; Quit
+                </button>
+            </div>
         </div>
     </nav>
 
-    <main class="container">
-        {% block content %}{% endblock %}
+    <!-- Main Content Area (SPA pages) -->
+    <main class="container" style="padding-top: var(--space-xl); padding-bottom: var(--space-2xl);">
+        {% block content %}
+
+        <!-- ============ DASHBOARD PAGE ============ -->
+        <div id="page-dashboard" class="page-content">
+            <!-- Stats row -->
+            <div class="grid grid-4 mb-lg" id="stats-row">
+                <div class="card stat-card">
+                    <div class="stat-value" id="stat-total-jobs">{{ job_count }}</div>
+                    <div class="stat-label">Total Jobs</div>
+                </div>
+                <div class="card stat-card">
+                    <div class="stat-value" id="stat-matches">--</div>
+                    <div class="stat-label">Strong Matches</div>
+                </div>
+                <div class="card stat-card">
+                    <div class="stat-value" id="stat-applied">0</div>
+                    <div class="stat-label">Applied</div>
+                </div>
+                <div class="card stat-card">
+                    <div class="stat-value" id="stat-ats">{{ ats_score or '--' }}</div>
+                    <div class="stat-label">ATS Score</div>
+                </div>
+            </div>
+
+            <!-- Top Matches + Skills Gap side by side -->
+            <div class="grid grid-2">
+                <!-- Top Matches -->
+                <div class="card" id="top-matches-card">
+                    <div class="section-header">
+                        <h3>&#127919; Top Matches</h3>
+                        <a href="#" data-page="jobs" class="text-sm text-accent" onclick="window._app.switchPage('jobs')">View all &rarr;</a>
+                    </div>
+                    <div id="top-matches-list">
+                        <div class="loading-overlay"><div class="spinner"></div><span>Analyzing matches...</span></div>
+                    </div>
+                </div>
+
+                <!-- Skills Gap + Quick Actions -->
+                <div class="flex flex-col gap-lg">
+                    <div class="card">
+                        <h3 class="mb-md">&#128200; Skills Gap</h3>
+                        <div id="skills-gap-content">
+                            <div class="loading-overlay"><div class="spinner"></div><span>Analyzing...</span></div>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <h3 class="mb-md">&#9889; Quick Actions</h3>
+                        <div class="flex flex-col gap-sm">
+                            <button class="btn btn-primary w-full" onclick="window._app.startScraping()">
+                                &#128269; Run Job Search
+                            </button>
+                            <button class="btn btn-ghost w-full" onclick="window._app.switchPage('profile')">
+                                &#128100; Edit Profile
+                            </button>
+                            <button class="btn btn-ghost w-full" onclick="window._app.switchPage('pipeline')">
+                                &#128203; View Pipeline
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ============ JOBS PAGE ============ -->
+        <div id="page-jobs" class="page-content hidden">
+            <div class="section-header">
+                <h2>&#128188; Job Search</h2>
+                <div class="flex gap-sm">
+                    <input type="text" class="input" id="job-search-input" placeholder="Filter jobs..." style="width: 260px;">
+                    <select class="input" id="job-sort-select" style="width: 180px;">
+                        <option value="score">Sort: Match Score</option>
+                        <option value="date">Sort: Newest</option>
+                        <option value="company">Sort: Company</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Filter chips -->
+            <div class="chip-group mb-lg" id="job-filters">
+                <button class="chip selected" data-filter="all">All</button>
+                <button class="chip" data-filter="high">High Match (75%+)</button>
+                <button class="chip" data-filter="medium">Medium (35-74%)</button>
+                <button class="chip" data-filter="saved">Saved</button>
+            </div>
+
+            <div class="card" style="padding: 0;">
+                <div id="jobs-list">
+                    <div class="loading-overlay"><div class="spinner"></div><span>Loading jobs...</span></div>
+                </div>
+            </div>
+
+            <div class="flex justify-between items-center mt-md" id="jobs-pagination">
+                <span class="text-sm text-muted" id="jobs-showing">Showing 0 jobs</span>
+                <div class="flex gap-sm">
+                    <button class="btn btn-ghost btn-sm" id="jobs-prev" disabled>&#8592; Prev</button>
+                    <button class="btn btn-ghost btn-sm" id="jobs-next">Next &#8594;</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ============ PIPELINE PAGE ============ -->
+        <div id="page-pipeline" class="page-content hidden">
+            <div class="section-header">
+                <h2>&#128203; Application Pipeline</h2>
+                <span class="text-sm text-muted" id="pipeline-total">0 applications</span>
+            </div>
+
+            <div class="pipeline-cols" id="pipeline-board">
+                <!-- Saved -->
+                <div class="pipeline-col">
+                    <div class="pipeline-header">
+                        <h4>&#128278; Saved</h4>
+                        <span class="pipeline-count" id="count-saved">0</span>
+                    </div>
+                    <div class="pipeline-body" id="col-saved"></div>
+                </div>
+                <!-- Applied -->
+                <div class="pipeline-col">
+                    <div class="pipeline-header">
+                        <h4>&#128228; Applied</h4>
+                        <span class="pipeline-count" id="count-applied">0</span>
+                    </div>
+                    <div class="pipeline-body" id="col-applied"></div>
+                </div>
+                <!-- Interview -->
+                <div class="pipeline-col">
+                    <div class="pipeline-header">
+                        <h4>&#127908; Interview</h4>
+                        <span class="pipeline-count" id="count-interview">0</span>
+                    </div>
+                    <div class="pipeline-body" id="col-interview"></div>
+                </div>
+                <!-- Offer -->
+                <div class="pipeline-col">
+                    <div class="pipeline-header">
+                        <h4>&#127881; Offer</h4>
+                        <span class="pipeline-count" id="count-offer">0</span>
+                    </div>
+                    <div class="pipeline-body" id="col-offer"></div>
+                </div>
+                <!-- Rejected -->
+                <div class="pipeline-col">
+                    <div class="pipeline-header">
+                        <h4>&#10060; Rejected</h4>
+                        <span class="pipeline-count" id="count-rejected">0</span>
+                    </div>
+                    <div class="pipeline-body" id="col-rejected"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ============ PROFILE PAGE ============ -->
+        <div id="page-profile" class="page-content hidden">
+            <div class="section-header">
+                <h2>&#128100; Your Profile</h2>
+                <button class="btn btn-primary" id="btn-save-profile" onclick="window._app.saveProfile()">Save Changes</button>
+            </div>
+
+            <div class="grid grid-2">
+                <!-- Left: Profile Form -->
+                <div class="card">
+                    <h3 class="mb-md">Personal Info</h3>
+                    <div class="flex flex-col gap-md">
+                        <div>
+                            <label for="profile-name">Full Name</label>
+                            <input type="text" class="input" id="profile-name" placeholder="Your name">
+                        </div>
+                        <div>
+                            <label for="profile-email">Email</label>
+                            <input type="email" class="input" id="profile-email" placeholder="your@email.com">
+                        </div>
+                        <div>
+                            <label for="profile-german">German Level</label>
+                            <select class="input" id="profile-german">
+                                <option value="A1">A1 - Beginner</option>
+                                <option value="A2" selected>A2 - Elementary</option>
+                                <option value="B1">B1 - Intermediate</option>
+                                <option value="B2">B2 - Upper Intermediate</option>
+                                <option value="C1">C1 - Advanced</option>
+                                <option value="C2">C2 - Mastery</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label for="profile-experience">Experience Level</label>
+                            <select class="input" id="profile-experience">
+                                <option value="entry" selected>Entry Level / Student</option>
+                                <option value="mid">Mid Level (2-5 years)</option>
+                                <option value="senior">Senior (5+ years)</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Right: Preferences -->
+                <div class="flex flex-col gap-lg">
+                    <div class="card">
+                        <h3 class="mb-md">Desired Roles</h3>
+                        <div class="chip-group" id="roles-chips"></div>
+                        <div class="flex gap-sm mt-md">
+                            <input type="text" class="input" id="custom-role-input" placeholder="Add custom role..." style="flex:1;">
+                            <button class="btn btn-ghost btn-sm" onclick="window._app.addCustomChip('roles-chips', 'custom-role-input')">+ Add</button>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <h3 class="mb-md">Preferred Locations</h3>
+                        <div class="chip-group" id="locations-chips"></div>
+                        <div class="flex gap-sm mt-md">
+                            <input type="text" class="input" id="custom-city-input" placeholder="Add custom city..." style="flex:1;">
+                            <button class="btn btn-ghost btn-sm" onclick="window._app.addCustomChip('locations-chips', 'custom-city-input')">+ Add</button>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <h3 class="mb-md">Job Types</h3>
+                        <div class="chip-group" id="types-chips"></div>
+                        <div class="flex gap-sm mt-md">
+                            <input type="text" class="input" id="custom-type-input" placeholder="Add custom type..." style="flex:1;">
+                            <button class="btn btn-ghost btn-sm" onclick="window._app.addCustomChip('types-chips', 'custom-type-input')">+ Add</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- CV Re-upload -->
+            <div class="card mt-lg">
+                <div class="section-header">
+                    <h3>&#128196; CV Management</h3>
+                    <span class="text-sm text-muted" id="cv-status-text">No CV uploaded</span>
+                </div>
+                <p class="text-sm text-muted mb-md">Upload a new CV to re-extract your skills and update your profile.</p>
+                <div class="upload-zone" id="profile-cv-upload-zone" style="padding: var(--space-lg);">
+                    <div class="upload-icon" style="font-size: 2rem;">&#128196;</div>
+                    <p class="text-sm"><strong>Drop CV here</strong> or click to browse (PDF)</p>
+                    <input type="file" id="profile-cv-file-input" accept=".pdf" class="hidden">
+                </div>
+                <div id="profile-cv-upload-status" class="hidden mt-md text-center">
+                    <div class="spinner" style="margin: 0 auto;"></div>
+                    <p class="text-sm text-muted mt-sm">Analyzing CV...</p>
+                </div>
+                <div id="profile-cv-upload-result" class="hidden mt-md"></div>
+            </div>
+
+            <!-- Skills section -->
+            <div class="card mt-lg">
+                <div class="section-header">
+                    <h3>&#129520; Your Skills</h3>
+                    <span class="text-sm text-muted" id="skills-count">0 skills detected</span>
+                </div>
+                <div class="chip-group" id="skills-chips"></div>
+                <div class="flex gap-sm mt-md">
+                    <input type="text" class="input" id="custom-skill-input" placeholder="Add a skill..." style="flex:1;">
+                    <button class="btn btn-ghost btn-sm" onclick="window._app.addCustomChip('skills-chips', 'custom-skill-input')">+ Add</button>
+                </div>
+            </div>
+        </div>
+
+        {% endblock %}
     </main>
+
+    <!-- Onboarding Wizard (shown on first visit) -->
+    <div id="onboarding-wizard" class="wizard-overlay hidden">
+        <div class="wizard-container">
+            <div class="wizard-header">
+                <h2>&#128075; Welcome to ATSchecker</h2>
+                <p class="text-sm text-muted mt-sm">Let's set up your profile in 3 quick steps</p>
+                <div class="wizard-steps" id="wizard-steps">
+                    <div class="wizard-step active" data-step="1">
+                        <span class="step-dot">1</span> Upload CV
+                    </div>
+                    <div class="wizard-step" data-step="2">
+                        <span class="step-dot">2</span> Review Skills
+                    </div>
+                    <div class="wizard-step" data-step="3">
+                        <span class="step-dot">3</span> Preferences
+                    </div>
+                </div>
+            </div>
+
+            <!-- Step 1: Upload CV -->
+            <div class="wizard-body" id="wizard-step-1">
+                <div class="upload-zone" id="cv-upload-zone">
+                    <div class="upload-icon">&#128196;</div>
+                    <h3>Drop your CV here</h3>
+                    <p class="text-sm text-muted mt-sm">or click to browse (PDF only)</p>
+                    <input type="file" id="cv-file-input" accept=".pdf" class="hidden">
+                </div>
+                <div id="cv-upload-status" class="hidden mt-md text-center">
+                    <div class="spinner" style="margin: 0 auto;"></div>
+                    <p class="text-sm text-muted mt-sm">Analyzing your CV...</p>
+                </div>
+                <div id="cv-upload-result" class="hidden mt-md"></div>
+            </div>
+
+            <!-- Step 2: Review Skills -->
+            <div class="wizard-body hidden" id="wizard-step-2">
+                <p class="text-sm text-muted mb-md">We detected these skills from your CV. Toggle any that are incorrect:</p>
+                <div class="chip-group" id="wizard-skills-chips"></div>
+            </div>
+
+            <!-- Step 3: Preferences -->
+            <div class="wizard-body hidden" id="wizard-step-3">
+                <div class="flex flex-col gap-lg">
+                    <div>
+                        <label>What roles are you looking for?</label>
+                        <div class="chip-group mt-sm" id="wizard-roles-chips"></div>
+                    </div>
+                    <div>
+                        <label>Preferred locations</label>
+                        <div class="chip-group mt-sm" id="wizard-locations-chips"></div>
+                    </div>
+                    <div>
+                        <label>Job types</label>
+                        <div class="chip-group mt-sm" id="wizard-types-chips"></div>
+                    </div>
+                    <div class="grid grid-2">
+                        <div>
+                            <label for="wizard-german">German Level</label>
+                            <select class="input" id="wizard-german">
+                                <option value="A1">A1 - Beginner</option>
+                                <option value="A2" selected>A2 - Elementary</option>
+                                <option value="B1">B1 - Intermediate</option>
+                                <option value="B2">B2 - Upper Intermediate</option>
+                                <option value="C1">C1 - Advanced</option>
+                                <option value="C2">C2 - Mastery</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label for="wizard-experience">Experience Level</label>
+                            <select class="input" id="wizard-experience">
+                                <option value="entry" selected>Entry / Student</option>
+                                <option value="mid">Mid (2-5 years)</option>
+                                <option value="senior">Senior (5+ years)</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="wizard-footer">
+                <button class="btn btn-ghost" id="wizard-back" onclick="window._app.wizardBack()" disabled>&#8592; Back</button>
+                <button class="btn btn-primary" id="wizard-next" onclick="window._app.wizardNext()">Next &#8594;</button>
+            </div>
+        </div>
+    </div>
 
     <script src="{{ url_for('static', filename='js/app.js') }}"></script>
     {% block scripts %}{% endblock %}

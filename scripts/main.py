@@ -111,7 +111,7 @@ def cmd_ats(config: dict, force: bool = False):
 
     pdfs = discover_pdfs(cv_folder)
     if not pdfs:
-        print(f"\n⚠ No PDF files found in {cv_folder}/")
+        print(f"\n[!] No PDF files found in {cv_folder}/")
         print(f"  Copy your CV PDFs into the 'cvs/' folder and re-run.")
         return []
 
@@ -129,27 +129,27 @@ def cmd_ats(config: dict, force: bool = False):
             print(f"  ⏭ {fname} (unchanged, skipping)")
             continue
 
-        print(f"\n  ▶ Analyzing: {fname}")
+        print(f"\n  [>] Analyzing: {fname}")
         try:
             report = analyze_pdf(pdf_path)
             reports.append(report)
 
             # Print summary
-            icon = "✓" if report.overall_score >= 75 else "⚠" if report.overall_score >= 55 else "✗"
+            icon = "[OK]" if report.overall_score >= 75 else "[!]" if report.overall_score >= 55 else "[x]"
             print(f"    {icon} ATS Score: {report.overall_score}/100 (Grade: {report.grade})")
 
             fail_count = sum(1 for c in report.checks if c.status == "fail")
             warn_count = sum(1 for c in report.checks if c.status == "warning")
             if fail_count:
-                print(f"    ✗ {fail_count} critical issue(s)")
+                print(f"    [x] {fail_count} critical issue(s)")
             if warn_count:
-                print(f"    ⚠ {warn_count} warning(s)")
+                print(f"    [!] {warn_count} warning(s)")
 
             # Update cache
             cache[fname] = {"hash": fhash, "score": report.overall_score, "grade": report.grade}
 
         except Exception as e:
-            print(f"    ✗ Error analyzing {fname}: {e}")
+            print(f"    [x] Error analyzing {fname}: {e}")
 
     save_analyzed_cache(config, cache)
     return reports
@@ -192,17 +192,17 @@ def cmd_match(config: dict):
     pdfs = discover_pdfs(cv_folder)
 
     if not pdfs:
-        print(f"\n⚠ No PDF files found in {cv_folder}/")
+        print(f"\n[!] No PDF files found in {cv_folder}/")
         return [], None
 
     # Load jobs
     jobs = get_cached_jobs(config=config)
     if not jobs:
-        print("\n⚠ No cached jobs found. Running job scraper first...")
+        print("\n[!] No cached jobs found. Running job scraper first...")
         jobs = scrape_all_jobs(config=config, use_cache=False)
 
     if not jobs:
-        print("✗ No jobs available for matching.")
+        print("[x] No jobs available for matching.")
         return [], None
 
     all_matches = []
@@ -210,7 +210,7 @@ def cmd_match(config: dict):
 
     for pdf_path in pdfs:
         fname = os.path.basename(pdf_path)
-        print(f"\n  ▶ Matching: {fname}")
+        print(f"\n  [>] Matching: {fname}")
 
         try:
             cv = parse_cv(pdf_path, config=config)
@@ -240,7 +240,7 @@ def cmd_match(config: dict):
                 print(f"    {icon} {i}. {m.job.title} @ {m.job.company} — {m.overall_score:.1f}%")
 
         except Exception as e:
-            print(f"    ✗ Error matching {fname}: {e}")
+            print(f"    [x] Error matching {fname}: {e}")
 
     # Skills gap analysis
     gap = analyze_skills_gap(all_matches, list(set(all_cv_skills)))
@@ -278,7 +278,7 @@ def cmd_scan(config: dict):
         pdfs = discover_pdfs(cv_folder)
 
     if not pdfs:
-        print(f"\n⚠ No PDF files found in {cv_folder}/ or project root.")
+        print(f"\n[!] No PDF files found in {cv_folder}/ or project root.")
         print("  Please copy your CV PDFs into the 'cvs/' folder and re-run.")
         return
 
@@ -291,7 +291,7 @@ def cmd_scan(config: dict):
 
     for pdf_path in pdfs:
         fname = os.path.basename(pdf_path)
-        print(f"\n  ▶ Analyzing: {fname}")
+        print(f"\n  [>] Analyzing: {fname}")
         try:
             cv = parse_cv(pdf_path, config=config)
             update_generated_profile(
@@ -305,10 +305,10 @@ def cmd_scan(config: dict):
             report = run_ats_check(cv)
             ats_reports.append(report)
 
-            icon = "✓" if report.overall_score >= 75 else "⚠" if report.overall_score >= 55 else "✗"
+            icon = "[OK]" if report.overall_score >= 75 else "[!]" if report.overall_score >= 55 else "[x]"
             print(f"    {icon} ATS Score: {report.overall_score}/100 (Grade: {report.grade})")
         except Exception as e:
-            print(f"    ✗ Error: {e}")
+            print(f"    [x] Error: {e}")
 
     # Step 2: Scrape Jobs
     print(f"\n{'─'*60}")
@@ -318,7 +318,7 @@ def cmd_scan(config: dict):
     try:
         jobs = scrape_all_jobs(config=config, use_cache=True)
     except Exception as e:
-        print(f"  ✗ Job scraping failed: {e}")
+        print(f"  [x] Job scraping failed: {e}")
         print("  Continuing with any cached jobs...")
         jobs = get_cached_jobs(config=config)
 
@@ -379,7 +379,7 @@ def cmd_scan(config: dict):
 
     # Open in browser
     print(f"\n{'='*60}")
-    print("✓ SCAN COMPLETE")
+    print("[OK] SCAN COMPLETE")
     print(f"{'='*60}")
     print(f"  Report: {report_path}")
 
@@ -441,7 +441,7 @@ def main():
     elif command == "ats":
         reports = cmd_ats(config)
         if reports:
-            print(f"\n✓ Analyzed {len(reports)} CV(s).")
+            print(f"\n[OK] Analyzed {len(reports)} CV(s).")
     elif command == "jobs":
         use_cache = "--fresh" not in sys.argv
         jobs = cmd_jobs(config, use_cache=use_cache)

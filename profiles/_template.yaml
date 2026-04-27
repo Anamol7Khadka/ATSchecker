@@ -1,0 +1,40 @@
+# =====================================================
+# ATSchecker Profile Template
+# =====================================================
+# Copy this file, rename it to your_name.yaml, and fill in your details.
+
+name: Your Name
+german_level: A1  # A1, A2, B1, B2, C1, C2
+
+cities:
+  - Berlin
+  # - München
+  # - Stuttgart
+
+job_types:
+  - Full-time
+  # - Werkstudent
+  # - Working Student
+  # - Internship
+
+search_keywords:
+  - Your Field
+  # - Another Keyword
+
+cv_skills:
+  - Skill 1
+  # - Skill 2
+
+opportunity:
+  role_keywords:
+    - your role
+  prestige_companies:
+    - target company
+  location_keywords:
+    - your city
+
+scraper_hints:
+  greenhouse_slugs: []
+  lever_slugs: []
+  career_pages: []
+  niche_board_focus: tech  # "tech", "engineering", or "academic"

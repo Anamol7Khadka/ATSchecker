@@ -44,8 +44,12 @@ def get_config() -> dict:
 
 
 def get_cv_folder(config: dict) -> str:
-    """Get absolute path to CV folder."""
-    return os.path.join(PROJECT_ROOT, config.get("paths", {}).get("cv_folder", "cvs"))
+    """Get absolute path to CV folder (profile-specific)."""
+    base = os.path.join(PROJECT_ROOT, config.get("paths", {}).get("cv_folder", "cvs"))
+    profile_slug = config.get("_active_profile", "")
+    if profile_slug:
+        return os.path.join(base, profile_slug)
+    return base
 
 
 def get_reports_folder(config: dict) -> str:

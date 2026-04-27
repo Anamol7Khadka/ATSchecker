@@ -174,6 +174,10 @@ ROLE_SUGGESTIONS = {
     "frontend development": ["react", "angular", "vue", "javascript", "typescript", "html", "css"],
     "full-stack development": ["react", "node.js", "python", "javascript", "sql", "docker"],
     "research / thesis": ["machine learning", "deep learning", "nlp", "computer vision", "pytorch"],
+    # Systems Engineering / MBSE / Automotive
+    "systems engineering": ["requirements engineering", "sysml", "mbse", "doors", "v-model", "iso 26262", "systems engineering"],
+    "requirements engineering": ["requirements engineering", "doors", "traceability", "enterprise architect", "sysml", "aspice"],
+    "functional safety": ["iso 26262", "do-178c", "iec 61508", "aspice", "system testing", "fmea", "fta"],
 }
 
 JOB_TYPE_OPTIONS = [

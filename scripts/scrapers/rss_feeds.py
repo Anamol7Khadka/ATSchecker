@@ -27,6 +27,10 @@ class RSSJobScraper(BaseScraper):
         "RemoteOK RSS": "https://remoteok.com/remote-jobs.rss",
         "WeAreDevelopers": "https://www.wearedevelopers.com/feed",
         "Arbeitnow RSS": "https://www.arbeitnow.com/api/job-board-api",
+        # Engineering / IT specific
+        "IT-Treff": "https://www.it-treff.de/rss.xml",
+        "Ingenieur.de": "https://www.ingenieur.de/feed/", # Usually contains job posts
+        "Heise Jobs": "https://www.heise.de/jobs/rss/topjobs.rdf",
     }
 
     # Additional targeted feeds built from search queries

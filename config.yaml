@@ -3,75 +3,16 @@
 # =====================================================
 
 # Target cities for job search
-cities:
-  - Berlin
-  - Wolfsburg
-  - Leipzig
-  - Magdeburg
+cities: []
 
 # Job types to search for
-job_types:
-  - Werkstudent
-  - Working Student
-  - Internship
-  - Praktikum
-  - Master Thesis
-  - Masterarbeit
-  - Abschlussarbeit
+job_types: []
 
 # Keywords aligned with CV skills (used for job search queries)
-search_keywords:
-  - Data Engineering
-  - Backend Development
-  - Software Engineer
-  - Python Developer
-  - Java Developer
-  - Big Data
-  - Data Science
-  - Machine Learning
-  - DevOps
-  - Cloud Engineer
-  - AI Machine Learning
-  - Deep Learning NLP
-  - Computer Vision
+search_keywords: []
 
 # Technical skills extracted from CV (used for matching)
-cv_skills:
-  - Python
-  - Java
-  - SQL
-  - Bash
-  - PySpark
-  - Spark
-  - Hadoop
-  - MapReduce
-  - HDFS
-  - AWS
-  - Lambda
-  - EC2
-  - S3
-  - CloudWatch
-  - Elasticsearch
-  - Pandas
-  - NumPy
-  - Scikit-learn
-  - PyTorch
-  - LangChain
-  - Docker
-  - Git
-  - Maven
-  - PostgreSQL
-  - CI/CD
-  - Linux
-  - React
-  - ETL
-  - Protobuf
-  - REST API
-  - Machine Learning
-  - Deep Learning
-  - NLP
-  - RAG
-  - LLM
+cv_skills: []
 
 # Scraper settings
 scraping:

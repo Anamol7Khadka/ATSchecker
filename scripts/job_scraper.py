@@ -30,7 +30,20 @@ from scrapers.company_portals import CompanyPortalsScraper
 from scrapers.jooble import JoobleScraper
 from scrapers.rss_feeds import RSSJobScraper
 from scrapers.arbeitsagentur import ArbeitsagenturScraper
+from scrapers.greenhouse_api import GreenhouseAPIScraper
+from scrapers.lever_api import LeverAPIScraper
+from scrapers.sitemap_miner import SitemapMiner
+from scrapers.niche_boards import NicheBoardsScraper
+from scrapers.career_page_crawler import CareerPageCrawler
+from scrapers.smartrecruiters_api import SmartRecruitersAPIScraper
 from scrapers.rate_limiter import reset_state as reset_rate_limiter
+
+# Description enricher (fetches full job page content for thin DDG snippets)
+try:
+    from description_enricher import enrich_job_descriptions
+    ENRICHER_AVAILABLE = True
+except ImportError:
+    ENRICHER_AVAILABLE = False
 
 
 # Registry of all available scrapers — ALL run in parallel for maximum coverage
@@ -53,6 +66,20 @@ SCRAPER_REGISTRY = {
     "stepstone": StepStoneScraper,
     "xing": XingScraper,
     "jobteaser": JobteaserScraper,
+
+    # ── Direct ATS APIs (public, unauthenticated — zero bot risk) ──
+    "greenhouse_api": GreenhouseAPIScraper,
+    "lever_api": LeverAPIScraper,
+    "smartrecruiters_api": SmartRecruitersAPIScraper,
+
+    # ── Passive discovery (zero bot risk) ──
+    "sitemap_miner": SitemapMiner,
+
+    # ── Niche boards (profile-aware) ──
+    "niche_boards": NicheBoardsScraper,
+
+    # ── Stealth deep crawling (company career SPAs) ──
+    "career_crawler": CareerPageCrawler,
 }
 
 
@@ -538,6 +565,16 @@ def scrape_all_jobs(
     logger(f"Final deduplication of {len(all_jobs)} total job listings...")
     unique_jobs = deduplicate_jobs(all_jobs)
     logger(f"After deduplication: {len(unique_jobs)} unique jobs")
+
+    # Description enrichment (fetch full descriptions for thin DDG snippets)
+    if ENRICHER_AVAILABLE:
+        logger(f"\nEnriching job descriptions...")
+        unique_jobs = enrich_job_descriptions(
+            unique_jobs,
+            max_workers=8,
+            min_description_length=200,
+            logger=logger,
+        )
 
     # Verify URLs are still alive
     logger(f"Verifying {len(unique_jobs)} job URLs...")

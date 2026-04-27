@@ -16,6 +16,7 @@ const state = {
   jobFilter: 'all',
   jobSearch: '',
   jobSort: 'score',
+  availableProfiles: [],
 };
 
 // ─── API Helpers ────────────────────────────────────────────
@@ -409,7 +410,7 @@ async function uploadProfileCV(file) {
   document.getElementById('profile-cv-upload-status').classList.remove('hidden');
 
   const formData = new FormData();
-  formData.append('cv', file);
+  formData.append('file', file);
 
   try {
     const resp = await fetch('/api/profile/upload-cv', { method: 'POST', body: formData });
@@ -476,9 +477,10 @@ async function startScraping() {
   btn.innerHTML = '<div class="spinner"></div> Scraping...';
 
   try {
-    const resp = await fetch('/compile', {
+    const resp = await fetch('/api/scrape', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ use_cache: false }),
     });
 
     if (resp.status === 409) {
@@ -671,7 +673,7 @@ async function uploadCV(file) {
   document.getElementById('cv-upload-status').classList.remove('hidden');
 
   const formData = new FormData();
-  formData.append('cv', file);
+  formData.append('file', file);
 
   try {
     const resp = await fetch('/api/profile/upload-cv', { method: 'POST', body: formData });
@@ -741,6 +743,16 @@ function setupEventListeners() {
   // Pagination
   document.getElementById('jobs-prev')?.addEventListener('click', () => { state.jobsPage--; renderJobs(); });
   document.getElementById('jobs-next')?.addEventListener('click', () => { state.jobsPage++; renderJobs(); });
+
+  // Legacy dashboard upload form
+  const uploadForm = document.getElementById('upload-form');
+  const uploadInput = document.getElementById('pdf-upload');
+  if (uploadForm && uploadInput) {
+    uploadForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      if (uploadInput.files.length) uploadCV(uploadInput.files[0]);
+    });
+  }
 }
 
 // ─── Utility ────────────────────────────────────────────────
@@ -760,11 +772,113 @@ function safeQuit() {
   }
 }
 
+// ─── Profile & Data Management ──────────────────────────────
+async function loadProfiles() {
+  try {
+    const data = await api('/api/profiles');
+    state.availableProfiles = data.profiles || [];
+    
+    // Update button label
+    const label = document.getElementById('active-profile-label');
+    if (label) {
+      const activeProfile = state.availableProfiles.find(p => p.slug === data.active);
+      label.textContent = activeProfile ? activeProfile.name : (data.active || 'Default');
+    }
+
+    // Populate dropdown
+    const list = document.getElementById('profile-list');
+    if (list) {
+      list.innerHTML = state.availableProfiles.map(p => `
+        <button class="btn btn-ghost btn-sm w-full text-left ${p.slug === data.active ? 'selected text-accent' : ''}" 
+                style="display:block; text-align:left; padding: 6px 10px; font-size: 0.85rem;"
+                onclick="switchProfile('${p.slug}')">
+          ${p.slug === data.active ? '&#10003; ' : '&nbsp;&nbsp;&nbsp;&nbsp;'}${esc(p.name)}
+        </button>
+      `).join('');
+    }
+  } catch (err) {
+    console.error('Failed to load profiles', err);
+  }
+}
+
+async function switchProfile(profileName) {
+  try {
+    document.getElementById('profile-dropdown').classList.add('hidden');
+    toast(`Switching to ${profileName}...`);
+    await api('/api/profiles/active', {
+      method: 'POST',
+      body: JSON.stringify({ profile: profileName })
+    });
+    
+    // Full reload to clear old state and fetch new profile data
+    window.location.reload();
+  } catch (err) {
+    toast(`Failed to switch profile: ${err.message}`, 'error');
+  }
+}
+
+async function clearAllData() {
+  // Close any open dropdown
+  const dd = document.getElementById('profile-dropdown');
+  if (dd) dd.classList.add('hidden');
+
+  const profileLabel = document.getElementById('active-profile-label')?.textContent || 'current profile';
+  if (!confirm(`⚠️ DELETE all jobs, pipeline data, and caches for "${profileLabel}"?\n\nThis cannot be undone.`)) {
+    return;
+  }
+  
+  try {
+    // Show immediate visual feedback
+    const totalEl = document.getElementById('stat-total-jobs');
+    if (totalEl) totalEl.textContent = '...';
+    
+    toast('Clearing all data...');
+    
+    const resp = await fetch('/api/data/clear', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ confirm: true })
+    });
+    
+    if (!resp.ok) {
+      const err = await resp.text();
+      toast(`Clear failed: ${err}`, 'error');
+      return;
+    }
+    
+    const data = await resp.json();
+    console.log('Clear result:', data);
+    
+    // Update UI immediately without waiting for reload
+    if (totalEl) totalEl.textContent = '0';
+    const matchesEl = document.getElementById('stat-matches');
+    if (matchesEl) matchesEl.textContent = '0';
+    const appliedEl = document.getElementById('stat-applied');
+    if (appliedEl) appliedEl.textContent = '0';
+    
+    toast(`✅ Cleared! ${data.deleted?.jobs || 0} jobs removed. Reloading...`);
+    setTimeout(() => window.location.reload(), 1000);
+  } catch (err) {
+    console.error('Clear failed:', err);
+    toast(`Clear failed: ${err.message}`, 'error');
+  }
+}
+
+// Close dropdowns when clicking outside
+document.addEventListener('click', (e) => {
+  const switcher = document.getElementById('profile-switcher');
+  const dropdown = document.getElementById('profile-dropdown');
+  if (switcher && dropdown && !switcher.contains(e.target)) {
+    dropdown.classList.add('hidden');
+  }
+});
+
 // ─── Init ───────────────────────────────────────────────────
 async function init() {
   setupEventListeners();
   setupCVUpload();
   setupProfileCVUpload();
+  loadProfiles();
 
   // Check if onboarding needed
   try {
@@ -799,5 +913,7 @@ async function init() {
 
 // Expose functions globally
 window._app = { switchPage, startScraping, wizardBack, wizardNext, saveProfile, showWizard, addCustomChip };
+window.switchProfile = switchProfile;
+window.clearAllData = clearAllData;
 
 document.addEventListener('DOMContentLoaded', init);

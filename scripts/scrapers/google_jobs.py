@@ -166,6 +166,16 @@ class GoogleJobsScraper(BaseScraper):
         # Company career pages
         "{kw} {city} karriere Stellenangebot",
         "{kw} {city} careers open position",
+        # ATS platform targeting (finds jobs ONLY posted on ATS, not on job boards)
+        "site:boards.greenhouse.io {kw} {city}",
+        "site:jobs.lever.co {kw} {city}",
+        "site:jobs.smartrecruiters.com {kw} {city}",
+        # Recruiter/headhunter postings (jobs ONLY posted by recruiters)
+        "{kw} {city} recruiter Stellenangebot",
+        "{kw} {city} personalberater job",
+        # Career page discovery
+        "inurl:karriere {kw} {city}",
+        "inurl:career {kw} {city} apply",
     ]
 
     def scrape(

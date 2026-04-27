@@ -19,13 +19,25 @@ except ImportError:
     UC_AVAILABLE = False
 
 try:
-    from duckduckgo_search import DDGS
+    from ddgs import DDGS
     DDG_AVAILABLE = True
 except ImportError:
-    DDG_AVAILABLE = False
+    try:
+        from duckduckgo_search import DDGS
+        DDG_AVAILABLE = True
+    except ImportError:
+        DDG_AVAILABLE = False
 
 def _detect_chrome_version():
-    import subprocess, re as _re
+    import subprocess, re as _re, platform
+    if platform.system() == "Windows":
+        try:
+            import winreg
+            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Google\Chrome\BLBeacon")
+            ver, _ = winreg.QueryValueEx(key, "version")
+            m = _re.match(r"(\d+)", ver)
+            if m: return int(m.group(1))
+        except Exception: pass
     for path in ["/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
                  "google-chrome", "chromium-browser", "chromium"]:
         try:

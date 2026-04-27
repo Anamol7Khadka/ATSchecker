@@ -45,6 +45,9 @@ from config_state import (
     get_upload_max_size_bytes,
     resolve_cv_skills,
     update_generated_profile,
+    list_profiles,
+    get_active_profile_name,
+    set_active_profile,
 )
 
 # New: Database and profile system
@@ -89,6 +92,11 @@ app.config["MAX_CONTENT_LENGTH"] = get_upload_max_size_bytes(get_effective_confi
 # Initialize database on import
 db.init_db()
 
+# Set active profile in DB module so queries are scoped correctly
+_startup_profile = get_active_profile_name(PROJECT_ROOT)
+if _startup_profile:
+    db.set_active_profile(_startup_profile)
+
 # ─── Global Application State ─────────────────────────────────────────────────
 
 state = {
@@ -111,7 +119,12 @@ def get_config():
 
 def get_cv_folder():
     config = get_config()
-    return os.path.join(PROJECT_ROOT, config.get("paths", {}).get("cv_folder", "cvs"))
+    base_folder = os.path.join(PROJECT_ROOT, config.get("paths", {}).get("cv_folder", "cvs"))
+    # Per-profile CV subfolder
+    profile_slug = get_active_profile_name(PROJECT_ROOT)
+    if profile_slug:
+        return os.path.join(base_folder, profile_slug)
+    return base_folder
 
 
 def is_thesis_job(job):
@@ -596,10 +609,10 @@ def compile_cv():
 @app.route("/api/upload", methods=["POST"])
 def upload_cv():
     """Upload a PDF file to cvs/ and run ATS."""
-    if "file" not in request.files:
+    file_obj = request.files.get("file") or request.files.get("cv")
+    if not file_obj:
         return jsonify({"error": "No file provided"}), 400
-    f = request.files["file"]
-    if not f.filename or not f.filename.lower().endswith(".pdf"):
+    if not file_obj.filename or not file_obj.filename.lower().endswith(".pdf"):
         return jsonify({"error": "Only PDF files accepted"}), 400
 
     cv_folder = get_cv_folder()
@@ -609,7 +622,7 @@ def upload_cv():
 
     cfg = get_config()
     dest = os.path.join(cv_folder, get_cv_filename(cfg, source="upload"))
-    f.save(dest)
+    file_obj.save(dest)
     try:
         run_ats_on_cv(dest)
         return jsonify({"status": "success", "message": f"Uploaded and analyzed {os.path.basename(dest)}"})
@@ -938,10 +951,10 @@ def upload_cv_for_profile():
     Onboarding Step 1: Upload CV and extract profile data.
     Returns extracted skills, education, experience for user review.
     """
-    if "file" not in request.files:
+    file_obj = request.files.get("file") or request.files.get("cv")
+    if not file_obj:
         return jsonify({"error": "No file provided"}), 400
-    f = request.files["file"]
-    if not f.filename or not f.filename.lower().endswith(".pdf"):
+    if not file_obj.filename or not file_obj.filename.lower().endswith(".pdf"):
         return jsonify({"error": "Only PDF files accepted"}), 400
 
     cv_folder = get_cv_folder()
@@ -952,7 +965,7 @@ def upload_cv_for_profile():
 
     cfg = get_config()
     dest = os.path.join(cv_folder, get_cv_filename(cfg, source="upload"))
-    f.save(dest)
+    file_obj.save(dest)
 
     try:
         # Parse CV
@@ -1151,13 +1164,12 @@ def dismiss_job_api():
 def pipeline_summary_api():
     """Quick summary of application pipeline for dashboard."""
     summary = db.get_pipeline_summary()
-    total_jobs = db.get_job_count()
-    profile = db.get_profile()
+    total_jobs = len(state["jobs"])
+    ats_score = state["ats_reports"][0].overall_score if state.get("ats_reports") else 0
     return jsonify({
         "pipeline": summary,
         "total_jobs": total_jobs,
-        "onboarding_complete": bool(profile.get("onboarding_complete", 0)),
-        "ats_score": profile.get("ats_score", 0),
+        "ats_score": ats_score,
     })
 
 
@@ -1183,23 +1195,43 @@ def matches_api():
         }
 
     results = []
-    for m in matches[:limit]:
-        d = m.to_dict()
-        # Add the DB job_id if we can find it
-        try:
-            job_id = getattr(m.job, '_db_id', None)
-            if not job_id:
-                # Look up by URL
-                conn = db.get_connection()
-                row = conn.execute(
-                    "SELECT id FROM jobs WHERE url = ? OR normalized_url = ? LIMIT 1",
-                    (m.job.url, normalize_url(m.job.url))
-                ).fetchone()
-                job_id = row["id"] if row else 0
-        except Exception:
-            job_id = 0
-        d["job_id"] = job_id
-        results.append(d)
+
+    if matches:
+        # Return scored matches
+        for m in matches[:limit]:
+            d = m.to_dict()
+            # Add the DB job_id if we can find it
+            try:
+                job_id = getattr(m.job, '_db_id', None)
+                if not job_id:
+                    conn = db.get_connection()
+                    row = conn.execute(
+                        "SELECT id FROM jobs WHERE url = ? OR normalized_url = ? LIMIT 1",
+                        (m.job.url, normalize_url(m.job.url))
+                    ).fetchone()
+                    job_id = row["id"] if row else 0
+            except Exception:
+                job_id = 0
+            d["job_id"] = job_id
+            results.append(d)
+    elif state.get("jobs"):
+        # No CV loaded yet — return raw jobs as unscored entries
+        for job in state["jobs"][:limit]:
+            results.append({
+                "job_title": job.title,
+                "company": job.company or "(unknown)",
+                "location": job.location or "",
+                "url": job.url or "",
+                "source": job.source or "",
+                "posted_date": str(job.posted_date or ""),
+                "job_type": job.job_type or "",
+                "overall_score": 0,
+                "matched_skills": [],
+                "missing_skills": [],
+                "match_reasons": ["Upload CV to see match scores"],
+                "warnings": [],
+                "job_id": 0,
+            })
 
     return jsonify({
         "matches": results,
@@ -1283,20 +1315,14 @@ def load_existing_data():
     config = get_config()
     cv_folder = get_cv_folder()
 
-    # Load cached jobs into memory AND sync to DB
+    # Load cached jobs into memory
     try:
         jobs = get_cached_jobs(config=config)
         if jobs:
             state["jobs"] = jobs
-            synced = sync_jobs_to_db(jobs)
-            print(f"  Loaded {len(jobs)} cached jobs ({synced} synced to database)")
-    except Exception:
-        pass
-
-    # Check if DB has jobs even if cache doesn't
-    db_count = db.get_job_count()
-    if db_count > 0 and not state["jobs"]:
-        print(f"  Database has {db_count} jobs from previous sessions")
+            print(f"  Loaded {len(jobs)} cached jobs")
+    except Exception as e:
+        print(f"  No cached jobs: {e}")
 
     # Load existing CV PDF (if any)
     if os.path.exists(cv_folder):
@@ -1309,12 +1335,118 @@ def load_existing_data():
             except Exception as e:
                 print(f"  Warning: Could not load CV: {e}")
 
-    # Show profile status
-    profile = db.get_profile()
-    if profile.get("onboarding_complete"):
-        print(f"  Profile: {profile.get('name', 'User')} — onboarding complete")
-    else:
-        print(f"  Profile: onboarding not yet completed")
+
+
+# ─── Profile Management API ──────────────────────────────────────────────────
+
+@app.route("/api/profiles", methods=["GET"])
+def api_list_profiles():
+    """Return available profiles and which is active."""
+    profiles = list_profiles(PROJECT_ROOT)
+    active = get_active_profile_name(PROJECT_ROOT)
+    return jsonify({
+        "profiles": profiles,
+        "active": active,
+    })
+
+
+@app.route("/api/profiles/active", methods=["POST"])
+def api_set_active_profile():
+    """Switch the active profile. Body: {"profile": "bijay_khanal"}"""
+    data = request.get_json(force=True, silent=True) or {}
+    profile_slug = data.get("profile", "")
+    if not profile_slug:
+        return jsonify({"error": "Missing 'profile' field"}), 400
+
+    success = set_active_profile(PROJECT_ROOT, profile_slug)
+    if not success:
+        return jsonify({"error": f"Profile '{profile_slug}' not found"}), 404
+
+    # Sync DB module so all queries scope to the new profile
+    db.set_active_profile(profile_slug)
+
+    # Clear in-memory state so old profile's data doesn't leak
+    state["jobs"] = []
+    state["matches"] = []
+    state["gap_analysis"] = None
+    state["scrape_logs"] = []
+    state["cv_data"] = None
+    state["cv_path"] = None
+    state["ats_reports"] = []
+
+    # Try to load jobs from the new profile's cache
+    try:
+        new_config = get_config()
+        cached_jobs = get_cached_jobs(config=new_config)
+        if cached_jobs:
+            state["jobs"] = cached_jobs
+    except Exception as e:
+        print(f"[Profile Switch] Cache load error: {e}")
+
+    # Load the new profile's CV (if it exists)
+    cv_folder = get_cv_folder()
+    cv_loaded = False
+    if os.path.exists(cv_folder):
+        pdfs = [f for f in os.listdir(cv_folder) if f.lower().endswith(".pdf")]
+        if pdfs:
+            pdf_path = os.path.join(cv_folder, pdfs[0])
+            try:
+                run_ats_on_cv(pdf_path)
+                cv_loaded = True
+                print(f"[Profile Switch] Loaded CV: {pdfs[0]}")
+            except Exception as e:
+                print(f"[Profile Switch] CV load error: {e}")
+
+    # Re-run matching if we have both CV and jobs
+    if state["cv_data"] and state["jobs"]:
+        try:
+            _run_matching(state["cv_data"])
+        except Exception as e:
+            print(f"[Profile Switch] Matching error: {e}")
+
+    return jsonify({
+        "success": True,
+        "active": profile_slug,
+        "message": f"Switched to profile: {profile_slug}",
+        "job_count": len(state["jobs"]),
+        "cv_loaded": cv_loaded,
+    })
+
+
+@app.route("/api/data/clear", methods=["POST"])
+def api_clear_all_data():
+    """Wipe all job data, caches, and in-memory state for current profile."""
+    data = request.get_json(force=True, silent=True) or {}
+    if not data.get("confirm"):
+        return jsonify({"error": "Must send {\"confirm\": true}"}), 400
+
+    # 1. Clear database tables for this profile
+    counts = db.clear_all_job_data()
+
+    # 2. Delete ALL cache files that could contain data
+    import glob
+    for pattern in [".job_cache*.json", ".analyzed_cache*.json"]:
+        for f in glob.glob(os.path.join(PROJECT_ROOT, pattern)):
+            try:
+                os.remove(f)
+                print(f"  [Clear] Deleted {os.path.basename(f)}")
+            except Exception:
+                pass
+
+    # 3. Clear ALL in-memory state
+    state["jobs"] = []
+    state["matches"] = []
+    state["gap_analysis"] = None
+    state["scrape_logs"] = []
+    state["cv_data"] = None
+    state["cv_path"] = None
+    state["ats_reports"] = []
+
+    return jsonify({
+        "success": True,
+        "deleted": counts,
+        "message": "All data cleared.",
+    })
 
 
 def find_free_port(start=5001, end=5020):

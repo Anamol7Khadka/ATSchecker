@@ -19,6 +19,17 @@ _local = threading.local()
 
 DB_NAME = "atschecker.db"
 
+# Active profile slug — set by app.py on startup and profile switch
+_active_profile = ""
+
+def set_active_profile(slug: str):
+    """Set the active profile slug for all subsequent DB queries."""
+    global _active_profile
+    _active_profile = slug or ""
+
+def get_active_profile() -> str:
+    return _active_profile
+
 
 def _db_path() -> str:
     """Return absolute path to the database file (project root)."""
@@ -65,7 +76,7 @@ CREATE TABLE IF NOT EXISTS schema_info (
 
 -- User profile (single-user app — one row)
 CREATE TABLE IF NOT EXISTS user_profile (
-    id                  INTEGER PRIMARY KEY CHECK (id = 1),
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
     name                TEXT DEFAULT '',
     email               TEXT DEFAULT '',
     phone               TEXT DEFAULT '',
@@ -90,6 +101,7 @@ CREATE TABLE IF NOT EXISTS user_profile (
     ats_grade           TEXT DEFAULT '',
     ats_report_json     TEXT DEFAULT '{}',
     onboarding_complete INTEGER DEFAULT 0,
+    profile_slug        TEXT DEFAULT '',
     created_at          TEXT DEFAULT (datetime('now')),
     updated_at          TEXT DEFAULT (datetime('now'))
 );
@@ -180,6 +192,20 @@ def init_db():
         (str(SCHEMA_VERSION),),
     )
     conn.commit()
+
+    # Migration: add profile_slug columns to tables that don't have it in schema
+    for table in ("user_skills", "jobs", "applications", "dismissed_jobs"):
+        _ensure_column(table, "profile_slug", "TEXT", "''")
+
+    # Create indexes for profile-scoped queries
+    try:
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_jobs_profile ON jobs(profile_slug)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_apps_profile ON applications(profile_slug)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_dismissed_profile ON dismissed_jobs(profile_slug)")
+        conn.commit()
+    except Exception:
+        pass
+
     print(f"  [OK] Database initialized ({_db_path()})")
 
 
@@ -216,9 +242,15 @@ def _parse_json_field(value: str, fallback=None):
 # ── Profile ──────────────────────────────────────────────────────────
 
 def get_profile() -> Dict[str, Any]:
-    """Get the user profile. Returns empty dict if not yet created."""
+    """Get the user profile for the active profile slug."""
     conn = get_connection()
-    row = conn.execute("SELECT * FROM user_profile WHERE id = 1").fetchone()
+    slug = get_active_profile()
+    row = conn.execute(
+        "SELECT * FROM user_profile WHERE profile_slug = ?", (slug,)
+    ).fetchone()
+    if not row:
+        # Fallback: legacy single-row
+        row = conn.execute("SELECT * FROM user_profile WHERE id = 1").fetchone()
     if not row:
         return {}
     d = _row_to_dict(row)
@@ -230,8 +262,11 @@ def get_profile() -> Dict[str, Any]:
 
 
 def upsert_profile(data: Dict[str, Any]) -> Dict[str, Any]:
-    """Create or update the user profile."""
+    """Create or update the user profile for the active profile slug."""
     conn = get_connection()
+    slug = get_active_profile()
+    data["profile_slug"] = slug
+
     # Serialize list fields to JSON
     for field in ("desired_roles", "desired_job_types", "desired_locations", "desired_companies"):
         if field in data and isinstance(data[field], (list, dict)):
@@ -241,15 +276,17 @@ def upsert_profile(data: Dict[str, Any]) -> Dict[str, Any]:
 
     data["updated_at"] = datetime.now().isoformat()
 
-    existing = conn.execute("SELECT id FROM user_profile WHERE id = 1").fetchone()
+    existing = conn.execute(
+        "SELECT id FROM user_profile WHERE profile_slug = ?", (slug,)
+    ).fetchone()
     if existing:
+        row_id = existing["id"]
         set_clause = ", ".join(f"{k} = ?" for k in data.keys())
         conn.execute(
-            f"UPDATE user_profile SET {set_clause} WHERE id = 1",
-            list(data.values()),
+            f"UPDATE user_profile SET {set_clause} WHERE id = ?",
+            list(data.values()) + [row_id],
         )
     else:
-        data["id"] = 1
         cols = ", ".join(data.keys())
         placeholders = ", ".join("?" for _ in data)
         conn.execute(
@@ -264,18 +301,27 @@ def upsert_profile(data: Dict[str, Any]) -> Dict[str, Any]:
 
 def get_skills() -> List[Dict[str, Any]]:
     conn = get_connection()
-    rows = conn.execute("SELECT * FROM user_skills ORDER BY name").fetchall()
+    slug = get_active_profile()
+    rows = conn.execute(
+        "SELECT * FROM user_skills WHERE profile_slug = ? ORDER BY name", (slug,)
+    ).fetchall()
+    if not rows:
+        # Fallback: legacy rows with empty slug
+        rows = conn.execute(
+            "SELECT * FROM user_skills WHERE profile_slug = '' ORDER BY name"
+        ).fetchall()
     return [_row_to_dict(r) for r in rows]
 
 
 def set_skills(skills: List[Dict[str, Any]]):
-    """Replace all skills with the given list."""
+    """Replace all skills for the active profile."""
     conn = get_connection()
-    conn.execute("DELETE FROM user_skills")
+    slug = get_active_profile()
+    conn.execute("DELETE FROM user_skills WHERE profile_slug = ?", (slug,))
     for s in skills:
         conn.execute(
-            "INSERT OR REPLACE INTO user_skills (name, category, level, years, from_cv, confirmed) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT OR REPLACE INTO user_skills (name, category, level, years, from_cv, confirmed, profile_slug) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
             (
                 s.get("name", "").lower().strip(),
                 s.get("category", ""),
@@ -283,6 +329,7 @@ def set_skills(skills: List[Dict[str, Any]]):
                 s.get("years", 0),
                 1 if s.get("from_cv", True) else 0,
                 1 if s.get("confirmed", True) else 0,
+                slug,
             ),
         )
     conn.commit()
@@ -290,17 +337,19 @@ def set_skills(skills: List[Dict[str, Any]]):
 
 def add_skill(name: str, category: str = "", level: str = "intermediate", years: float = 0, from_cv: bool = False):
     conn = get_connection()
+    slug = get_active_profile()
     conn.execute(
-        "INSERT OR IGNORE INTO user_skills (name, category, level, years, from_cv, confirmed) "
-        "VALUES (?, ?, ?, ?, ?, 1)",
-        (name.lower().strip(), category, level, years, 1 if from_cv else 0),
+        "INSERT OR IGNORE INTO user_skills (name, category, level, years, from_cv, confirmed, profile_slug) "
+        "VALUES (?, ?, ?, ?, ?, 1, ?)",
+        (name.lower().strip(), category, level, years, 1 if from_cv else 0, slug),
     )
     conn.commit()
 
 
 def remove_skill(name: str):
     conn = get_connection()
-    conn.execute("DELETE FROM user_skills WHERE name = ?", (name.lower().strip(),))
+    slug = get_active_profile()
+    conn.execute("DELETE FROM user_skills WHERE name = ? AND profile_slug = ?", (name.lower().strip(), slug))
     conn.commit()
 
 
@@ -347,12 +396,13 @@ def upsert_job(job_data: Dict[str, Any]) -> int:
             ),
         )
     else:
+        slug = get_active_profile()
         cursor = conn.execute(
             """INSERT INTO jobs
                 (title, company, location, url, normalized_url, description,
                  posted_date, source, job_type, salary, tags, scraped_at,
-                 quality_json, match_score, match_details, first_seen_at, last_seen_at)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                 quality_json, match_score, match_details, first_seen_at, last_seen_at, profile_slug)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
                 job_data.get("title", ""),
                 job_data.get("company", ""),
@@ -371,6 +421,7 @@ def upsert_job(job_data: Dict[str, Any]) -> int:
                 match_details_json,
                 now,
                 now,
+                slug,
             ),
         )
         job_id = cursor.lastrowid
@@ -401,10 +452,11 @@ def get_jobs(
     limit: int = 500,
     offset: int = 0,
 ) -> List[Dict[str, Any]]:
-    """Query jobs with filters."""
+    """Query jobs with filters, scoped to active profile."""
     conn = get_connection()
-    clauses = []
-    params = []
+    slug = get_active_profile()
+    clauses = ["profile_slug = ?"]
+    params = [slug]
 
     if active_only:
         clauses.append("is_active = 1")
@@ -418,7 +470,7 @@ def get_jobs(
         clauses.append("LOWER(location) LIKE ?")
         params.append(f"%{location.lower()}%")
 
-    where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+    where = "WHERE " + " AND ".join(clauses)
     sql = f"SELECT * FROM jobs {where} ORDER BY match_score DESC, last_seen_at DESC LIMIT ? OFFSET ?"
     params.extend([limit, offset])
 
@@ -447,8 +499,13 @@ def get_job_by_id(job_id: int) -> Optional[Dict[str, Any]]:
 
 def get_job_count(active_only: bool = True) -> int:
     conn = get_connection()
-    clause = "WHERE is_active = 1" if active_only else ""
-    row = conn.execute(f"SELECT COUNT(*) as cnt FROM jobs {clause}").fetchone()
+    slug = get_active_profile()
+    clauses = ["profile_slug = ?"]
+    params = [slug]
+    if active_only:
+        clauses.append("is_active = 1")
+    where = "WHERE " + " AND ".join(clauses)
+    row = conn.execute(f"SELECT COUNT(*) as cnt FROM jobs {where}", params).fetchone()
     return row["cnt"] if row else 0
 
 
@@ -470,12 +527,13 @@ VALID_STATUSES = {
 
 def save_application(job_id: int, status: str = "saved") -> Dict[str, Any]:
     conn = get_connection()
+    slug = get_active_profile()
     now = datetime.now().isoformat()
     applied_at = now if status == "applied" else ""
     conn.execute(
-        "INSERT OR REPLACE INTO applications (job_id, status, applied_at, updated_at, created_at) "
-        "VALUES (?, ?, ?, ?, COALESCE((SELECT created_at FROM applications WHERE job_id = ?), ?))",
-        (job_id, status, applied_at, now, job_id, now),
+        "INSERT OR REPLACE INTO applications (job_id, status, applied_at, updated_at, created_at, profile_slug) "
+        "VALUES (?, ?, ?, ?, COALESCE((SELECT created_at FROM applications WHERE job_id = ?), ?), ?)",
+        (job_id, status, applied_at, now, job_id, now, slug),
     )
     conn.commit()
     return get_application(job_id)
@@ -512,26 +570,30 @@ def get_application(job_id: int) -> Optional[Dict[str, Any]]:
 
 def get_applications(status: str = "") -> List[Dict[str, Any]]:
     conn = get_connection()
+    slug = get_active_profile()
     if status:
         rows = conn.execute(
             """SELECT a.*, j.title, j.company, j.location, j.url, j.match_score, j.source
                FROM applications a JOIN jobs j ON a.job_id = j.id
-               WHERE a.status = ? ORDER BY a.updated_at DESC""",
-            (status,),
+               WHERE a.profile_slug = ? AND a.status = ? ORDER BY a.updated_at DESC""",
+            (slug, status),
         ).fetchall()
     else:
         rows = conn.execute(
             """SELECT a.*, j.title, j.company, j.location, j.url, j.match_score, j.source
                FROM applications a JOIN jobs j ON a.job_id = j.id
-               ORDER BY a.updated_at DESC""",
+               WHERE a.profile_slug = ? ORDER BY a.updated_at DESC""",
+            (slug,),
         ).fetchall()
     return [_row_to_dict(r) for r in rows]
 
 
 def get_pipeline_summary() -> Dict[str, int]:
     conn = get_connection()
+    slug = get_active_profile()
     rows = conn.execute(
-        "SELECT status, COUNT(*) as cnt FROM applications GROUP BY status"
+        "SELECT status, COUNT(*) as cnt FROM applications WHERE profile_slug = ? GROUP BY status",
+        (slug,),
     ).fetchall()
     return {r["status"]: r["cnt"] for r in rows}
 
@@ -562,9 +624,10 @@ def get_notes(application_id: int) -> List[Dict[str, Any]]:
 
 def dismiss_job(job_id: int, reason: str = ""):
     conn = get_connection()
+    slug = get_active_profile()
     conn.execute(
-        "INSERT OR IGNORE INTO dismissed_jobs (job_id, reason) VALUES (?, ?)",
-        (job_id, reason),
+        "INSERT OR IGNORE INTO dismissed_jobs (job_id, reason, profile_slug) VALUES (?, ?, ?)",
+        (job_id, reason, slug),
     )
     conn.commit()
 
@@ -577,5 +640,35 @@ def is_dismissed(job_id: int) -> bool:
 
 def get_dismissed_job_ids() -> set:
     conn = get_connection()
-    rows = conn.execute("SELECT job_id FROM dismissed_jobs").fetchall()
+    slug = get_active_profile()
+    rows = conn.execute(
+        "SELECT job_id FROM dismissed_jobs WHERE profile_slug = ?", (slug,)
+    ).fetchall()
     return {r["job_id"] for r in rows}
+
+
+def clear_all_job_data() -> Dict[str, int]:
+    """
+    Wipe all job-related data for the active profile.
+    Returns counts of deleted rows per table.
+    """
+    conn = get_connection()
+    slug = get_active_profile()
+    counts = {}
+    for table in ("dismissed_jobs", "applications", "jobs"):
+        try:
+            row = conn.execute(
+                f"SELECT COUNT(*) as c FROM {table} WHERE profile_slug = ?", (slug,)
+            ).fetchone()
+            counts[table] = row["c"] if row else 0
+            conn.execute(f"DELETE FROM {table} WHERE profile_slug = ?", (slug,))
+        except Exception:
+            counts[table] = 0
+    # Notes are linked via application_id, orphaned notes auto-cleaned
+    try:
+        conn.execute("DELETE FROM notes WHERE application_id NOT IN (SELECT id FROM applications)")
+    except Exception:
+        pass
+    conn.commit()
+    return counts
+

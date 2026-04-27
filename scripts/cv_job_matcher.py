@@ -16,6 +16,13 @@ from typing import Dict, List, Optional, Set
 import yaml
 from rapidfuzz import fuzz
 
+# Semantic matching for "never miss" rescue
+try:
+    from semantic_matcher import SemanticMatcher
+    SEMANTIC_AVAILABLE = True
+except ImportError:
+    SEMANTIC_AVAILABLE = False
+
 from cv_parser import CVData
 from scrapers.base import JobPosting
 
@@ -465,6 +472,22 @@ def match_cv_to_jobs(
 
     results = []
 
+    # Build semantic matcher for rescue mechanism (initialized once per run)
+    _semantic_matcher = None
+    if SEMANTIC_AVAILABLE:
+        try:
+            yaml_skills = cfg.get("cv_skills", []) if isinstance(cfg, dict) else []
+            yaml_keywords = cfg.get("search_keywords", []) if isinstance(cfg, dict) else []
+            _semantic_matcher = SemanticMatcher(
+                cv_text=cv.raw_text,
+                yaml_skills=[str(s) for s in yaml_skills] if yaml_skills else cv_skill_names,
+                yaml_keywords=[str(k) for k in yaml_keywords] if yaml_keywords else [],
+            )
+            print(f"[Matcher] Semantic matcher initialized (tier: {_semantic_matcher.tier})")
+        except Exception as e:
+            print(f"[Matcher] Semantic matcher failed to init: {e}")
+            _semantic_matcher = None
+
     # Weights for the final score
     W_SKILL = 0.35    # Skill match is most important
     W_ROLE = 0.25     # Role relevance
@@ -481,6 +504,15 @@ def match_cv_to_jobs(
         skill_score, matched, missing, skill_reasons = compute_skill_score(
             cv_skill_names, job_text
         )
+
+        # Semantic rescue: if taxonomy found few matches, check semantic similarity
+        if skill_score < 40 and _semantic_matcher is not None:
+            sem_score = _semantic_matcher.score(job_text)
+            if sem_score > 50:
+                rescued_score = max(skill_score, sem_score * 0.85)
+                skill_reasons.append(f"Semantic rescue: {sem_score:.0f}% text similarity ({_semantic_matcher.tier})")
+                skill_score = rescued_score
+
         all_reasons.extend(skill_reasons)
 
         # 2. Role relevance (25%)

@@ -1,0 +1,127 @@
+# =====================================================
+# Profile: Aakash Khadka — Data Engineering / ML / Backend
+# =====================================================
+# Migrated from config.yaml personal fields
+
+name: Aakash Khadka
+german_level: A2
+
+cities:
+  - Berlin
+  - Wolfsburg
+  - Leipzig
+  - Magdeburg
+
+job_types:
+  - Werkstudent
+  - Working Student
+  - Internship
+  - Praktikum
+  - Master Thesis
+  - Masterarbeit
+  - Abschlussarbeit
+
+search_keywords:
+  - Data Engineering
+  - Backend Development
+  - Software Engineer
+  - Python Developer
+  - Java Developer
+  - Big Data
+  - Data Science
+  - Machine Learning
+  - DevOps
+  - Cloud Engineer
+  - AI Machine Learning
+  - Deep Learning NLP
+  - Computer Vision
+
+cv_skills:
+  - Python
+  - Java
+  - SQL
+  - Bash
+  - PySpark
+  - Spark
+  - Hadoop
+  - MapReduce
+  - HDFS
+  - AWS
+  - Lambda
+  - EC2
+  - S3
+  - CloudWatch
+  - Elasticsearch
+  - Pandas
+  - NumPy
+  - Scikit-learn
+  - PyTorch
+  - LangChain
+  - Docker
+  - Git
+  - Maven
+  - PostgreSQL
+  - CI/CD
+  - Linux
+  - React
+  - ETL
+  - Protobuf
+  - REST API
+  - Machine Learning
+  - Deep Learning
+  - NLP
+  - RAG
+  - LLM
+
+opportunity:
+  role_keywords:
+    - data science
+    - machine learning
+    - ml engineer
+    - ai engineer
+    - data engineer
+    - deep learning
+    - nlp
+    - computer vision
+    - software engineer
+    - backend engineer
+    - thesis
+    - research
+  prestige_companies:
+    - bosch
+    - sap
+    - siemens
+    - bmw
+    - mercedes
+    - porsche
+    - volkswagen
+    - infineon
+    - zalando
+    - celonis
+    - microsoft
+    - google
+    - amazon
+    - apple
+    - meta
+    - nvidia
+  location_keywords:
+    - magdeburg
+    - ovgu
+    - remote
+
+# Profile-specific scraper hints
+scraper_hints:
+  greenhouse_slugs:
+    - celonis
+    - personio
+    - n26
+    - hellofresh
+    - contentful
+    - ecosia
+    - scalable-capital
+  lever_slugs:
+    - checkout
+    - zenjob
+    - omio
+    - adjust
+  niche_board_focus: tech

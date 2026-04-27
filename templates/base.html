@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}ATSchecker — Job Hunting Command Center{% endblock %}</title>
     <meta name="description" content="AI-powered job hunting command center for Germany. CV analysis, smart matching, application tracking.">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v={{ range(10000, 99999) | random }}">
     {% block head %}{% endblock %}
 </head>
 <body>
@@ -28,6 +28,27 @@
             </ul>
 
             <div class="flex items-center gap-sm">
+                <!-- Profile Switcher -->
+                <div class="profile-switcher" id="profile-switcher" style="position: relative;">
+                    <button class="btn btn-ghost btn-sm" id="btn-profile-switch" title="Switch Profile"
+                            onclick="document.getElementById('profile-dropdown').classList.toggle('hidden')">
+                        &#128100; <span id="active-profile-label">Loading...</span> &#9662;
+                    </button>
+                    <div id="profile-dropdown" class="hidden" style="
+                        position: absolute; right: 0; top: 110%; min-width: 220px;
+                        background: var(--card-bg); border: 1px solid var(--border-color);
+                        border-radius: var(--radius-md); box-shadow: var(--shadow-lg);
+                        z-index: 1000; padding: var(--space-sm); overflow: hidden;
+                    ">
+                        <div id="profile-list" style="max-height: 200px; overflow-y: auto;"></div>
+                        <hr style="border-color: var(--border-color); margin: var(--space-xs) 0;">
+                        <button class="btn btn-ghost btn-sm w-full text-left" style="color: var(--danger); font-size: 0.8rem;"
+                                onclick="forceClearData()">
+                            &#128465; Clear All Data
+                        </button>
+                    </div>
+                </div>
+
                 <span class="badge badge-success" id="job-count-badge">{{ job_count }} jobs</span>
                 <button class="btn btn-ghost btn-sm" onclick="window._app.startScraping()" id="btn-scrape">
                     &#128269; Scrape
@@ -98,6 +119,9 @@
                             </button>
                             <button class="btn btn-ghost w-full" onclick="window._app.switchPage('pipeline')">
                                 &#128203; View Pipeline
+                            </button>
+                            <button class="btn btn-ghost w-full" style="color: var(--danger); border-color: var(--danger);" onclick="forceClearData()">
+                                &#128465; Clear All Jobs &amp; Cache
                             </button>
                         </div>
                     </div>
@@ -388,7 +412,57 @@
         </div>
     </div>
 
-    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/app.js') }}?v={{ range(10000, 99999) | random }}"></script>
+    <script>
+        async function forceClearData() {
+            // Close dropdown
+            const dd = document.getElementById('profile-dropdown');
+            if (dd) dd.classList.add('hidden');
+
+            const profileLabel = document.getElementById('active-profile-label')?.textContent || 'current profile';
+            if (!confirm(`⚠️ DELETE all jobs, pipeline data, and caches for "${profileLabel}"?\n\nThis cannot be undone.`)) {
+                return;
+            }
+            
+            try {
+                // Visual feedback
+                const totalEl = document.getElementById('stat-total-jobs');
+                if (totalEl) totalEl.textContent = '...';
+                
+                const toastContainer = document.getElementById('toast-container');
+                if (toastContainer) {
+                    const el = document.createElement('div');
+                    el.className = 'toast toast-success';
+                    el.innerHTML = `<span>&#10003;</span> Clearing all data...`;
+                    toastContainer.appendChild(el);
+                }
+                
+                const resp = await fetch('/api/data/clear', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ confirm: true })
+                });
+                
+                if (!resp.ok) {
+                    alert('Failed to clear data!');
+                    return;
+                }
+                
+                const data = await resp.json();
+                
+                if (toastContainer) {
+                    const el2 = document.createElement('div');
+                    el2.className = 'toast toast-success';
+                    el2.innerHTML = `<span>&#10003;</span> ✅ Cleared! Reloading...`;
+                    toastContainer.appendChild(el2);
+                }
+                
+                setTimeout(() => window.location.reload(true), 1000);
+            } catch (err) {
+                alert(`Clear failed: ${err.message}`);
+            }
+        }
+    </script>
     {% block scripts %}{% endblock %}
 </body>
 </html>

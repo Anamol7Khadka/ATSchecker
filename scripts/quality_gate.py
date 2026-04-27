@@ -99,6 +99,16 @@ ROLE_HINTS = (
     "research",
     "software",
     "thesis",
+    # Systems Engineering / MBSE / Automotive
+    "architect",
+    "ingenieur",
+    "konstruktion",
+    "mbse",
+    "requirements",
+    "safety",
+    "systems",
+    "validation",
+    "verification",
 )
 
 TAG_RE = re.compile(r"<[^>]+>")

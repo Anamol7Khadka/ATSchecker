@@ -108,6 +108,7 @@ state = {
     "gap_analysis": None,
     "scrape_status": {"running": False, "message": ""},
     "compile_status": {"running": False, "message": ""},
+    "matching_status": {"running": False, "message": ""},
     "scrape_logs": [],
 }
 
@@ -381,6 +382,12 @@ def _run_matching(cv):
         if german:
             language_level = german
 
+    # Also use role_keywords from profile YAML as desired_roles if not set via onboarding
+    if not desired_roles:
+        opp = config.get("opportunity", {})
+        if isinstance(opp, dict):
+            desired_roles = opp.get("role_keywords", [])
+
     matches = match_cv_to_jobs(
         cv=cv,
         jobs=state["jobs"],
@@ -396,6 +403,20 @@ def _run_matching(cv):
     matches.sort(key=lambda m: m.overall_score, reverse=True)
     state["matches"] = matches
     state["gap_analysis"] = analyze_skills_gap(matches, list(dict.fromkeys(cv_skills)))
+
+
+def _run_matching_background():
+    """Run matching in background thread so it doesn't block Flask."""
+    if not state.get("cv_data") or not state.get("jobs"):
+        return
+    state["matching_status"] = {"running": True, "message": f"Matching {len(state['jobs'])} jobs against CV..."}
+    try:
+        _run_matching(state["cv_data"])
+        state["matching_status"] = {"running": False, "message": f"Done! {len(state['matches'])} matches scored."}
+        print(f"[Matcher] Completed: {len(state['matches'])} matches, top score: {state['matches'][0].overall_score:.1f}" if state['matches'] else "[Matcher] Completed: 0 matches")
+    except Exception as e:
+        state["matching_status"] = {"running": False, "message": f"Error: {e}"}
+        print(f"[Matcher] Error: {e}")
 
 
 def _log_scrape(msg: str):
@@ -676,7 +697,11 @@ def start_scrape():
             # Final sync to DB
             synced = sync_jobs_to_db(jobs)
             _log_scrape(f"[OK] Synced {synced} jobs to database (persistent)")
-            state["scrape_status"] = {"running": False, "message": f"Done! {len(state['jobs'])} verified jobs available ({synced} saved to database). Click 'Sort & Analyze' to rank them."}
+            state["scrape_status"] = {"running": False, "message": f"Done! {len(state['jobs'])} verified jobs available ({synced} saved to database)."}
+            # Auto-run matching in background
+            if state.get("cv_data"):
+                _log_scrape(f"[>] Starting automatic matching against CV...")
+                threading.Thread(target=_run_matching_background, daemon=True).start()
         except Exception as e:
             # Even on error, keep whatever jobs were found so far + sync what we have
             sync_jobs_to_db(state["jobs"])
@@ -692,7 +717,9 @@ def get_status():
     return jsonify({
         "scrape": state["scrape_status"],
         "compile": state["compile_status"],
+        "matching": state.get("matching_status", {"running": False, "message": ""}),
         "job_count": len(state["jobs"]),
+        "match_count": len(state.get("matches", [])),
         "cv_loaded": state["cv_data"] is not None,
         "ats_score": state["ats_reports"][0].overall_score if state["ats_reports"] else None,
     })
@@ -1178,12 +1205,20 @@ def matches_api():
     """Return match results for the current CV against all jobs."""
     limit = int(request.args.get("limit", 50))
 
+    # If a CV exists on disk but isn't loaded in memory, load it now.
+    _ensure_cv_loaded()
+
     matches = state.get("matches", [])
 
-    # If no matches computed yet and we have CV + jobs, compute now
+    # If no matches computed yet and we have CV + jobs, run matching now.
     if not matches and state.get("cv_data") and state.get("jobs"):
-        _run_matching(state["cv_data"])
-        matches = state.get("matches", [])
+        if not state.get("matching_status", {}).get("running"):
+            state["matching_status"] = {"running": True, "message": "Matching jobs..."}
+            try:
+                _run_matching(state["cv_data"])
+                matches = state.get("matches", [])
+            finally:
+                state["matching_status"] = {"running": False, "message": ""}
 
     gap = state.get("gap_analysis")
     gap_dict = None
@@ -1334,6 +1369,25 @@ def load_existing_data():
                 print(f"  Loaded CV: {pdfs[0]} (ATS: {state['ats_reports'][0].overall_score}/100)")
             except Exception as e:
                 print(f"  Warning: Could not load CV: {e}")
+
+
+def _ensure_cv_loaded() -> bool:
+    """Ensure CV is loaded into memory from the active profile folder."""
+    if state.get("cv_data") is not None:
+        return True
+    cv_folder = get_cv_folder()
+    if not os.path.exists(cv_folder):
+        return False
+    pdfs = [f for f in os.listdir(cv_folder) if f.lower().endswith(".pdf")]
+    if not pdfs:
+        return False
+    pdf_path = os.path.join(cv_folder, pdfs[0])
+    try:
+        run_ats_on_cv(pdf_path)
+        return True
+    except Exception as e:
+        print(f"[Matcher] CV auto-load failed: {e}")
+        return False
 
 
 

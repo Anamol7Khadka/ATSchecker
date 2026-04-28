@@ -134,9 +134,10 @@ class NicheBoardsScraper(BaseScraper):
                     results = self._search_ddg(query, 10)
                     record_success("duckduckgo", self.config)
                 except Exception as exc:
-                    if is_rate_limit_error(exc):
-                        record_rate_limit("duckduckgo", self.config, reason=str(exc))
-                        self.log(f"[{self.name}] DDG rate limited for {board_name}")
+                    exc_str = str(exc)
+                    if is_rate_limit_error(exc) or "SendRequest" in exc_str or "broken pipe" in exc_str.lower() or "connection error" in exc_str.lower() or "timed out" in exc_str.lower() or "connecttimeout" in exc_str.lower():
+                        record_rate_limit("duckduckgo", self.config, reason=exc_str)
+                        self.log(f"[{self.name}] DDG rate limited / connection dropped for {board_name} (timeout/limit)")
                         return jobs
                     self.log(f"[{self.name}] DDG error for {board_name}: {exc}")
                     continue

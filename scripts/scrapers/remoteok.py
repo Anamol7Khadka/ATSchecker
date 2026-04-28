@@ -42,12 +42,15 @@ class RemoteOKScraper(BaseScraper):
             print(f"[{self.name}] API request failed: {e}")
             return []
 
-        # Build search terms for client-side filtering
-        search_terms = set()
+        # Build search terms for client-side filtering — ONLY use actual keywords, not generic job types
+        keyword_terms = set()
+        for kw in keywords[:8]:
+            keyword_terms.add(kw.lower())
+        # Also add specific job type terms that are actual roles (not generic like "Full-time")
+        generic_types = {"full-time", "part-time", "vollzeit", "teilzeit", "remote", "contract", "freelance"}
         for jt in job_types[:6]:
-            search_terms.add(jt.lower())
-        for kw in keywords[:6]:
-            search_terms.add(kw.lower())
+            if jt.lower() not in generic_types:
+                keyword_terms.add(jt.lower())
 
         for item in listings:
             if not isinstance(item, dict):
@@ -69,9 +72,9 @@ class RemoteOKScraper(BaseScraper):
             if job_url.startswith("/"):
                 job_url = f"https://remoteok.com{job_url}"
 
-            # Filter: check if any search term matches title, tags, or description
+            # Filter: MUST match at least one keyword (not generic job type)
             searchable = f"{title} {company} {' '.join(tags)} {description}".lower()
-            if not any(term in searchable for term in search_terms):
+            if not any(term in searchable for term in keyword_terms):
                 continue
 
             if any(j.url == job_url for j in jobs):

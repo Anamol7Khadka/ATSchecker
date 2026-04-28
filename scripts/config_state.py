@@ -136,6 +136,8 @@ def get_effective_config(project_root: str) -> Dict[str, Any]:
     # Merge chain: template → generated → shared config → active profile
     merged = _deep_merge(template_data, generated_data)
     merged = _deep_merge(merged, user_data)
+    if isinstance(template_data, dict):
+        merged["_matching_defaults"] = template_data.get("matching", {})
     if profile_data:
         merged = _deep_merge(merged, profile_data)
         # Also store the active profile name for downstream consumers

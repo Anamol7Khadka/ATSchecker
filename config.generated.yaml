@@ -1,39 +1,6 @@
 profile:
-  cv_file: Aakash_khadka_CV.pdf
+  cv_file: uploaded_cv.pdf
   cv_skills_extracted:
-  - S3
-  - aws
-  - bash
-  - ci/cd
-  - cloudwatch
-  - data engineering
-  - data science
-  - deep learning
-  - docker
-  - ec2
-  - elasticsearch
-  - elt
-  - etl
-  - git
-  - hadoop
-  - java
-  - lambda
-  - langchain
-  - linux
-  - llm
-  - machine learning
-  - maven
-  - nlp
-  - numpy
-  - pandas
-  - postgresql
-  - protobuf
-  - pyspark
-  - python
-  - pytorch
+  - R
   - rag
-  - react
-  - scikit-learn
-  - spark
-  - sql
-  updated_at: '2026-04-27T18:17:22.169073Z'
+  updated_at: '2026-04-28T09:55:49.067684Z'

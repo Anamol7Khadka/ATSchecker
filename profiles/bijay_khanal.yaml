@@ -16,26 +16,22 @@ cities:
 job_types:
   - Full-time
   - Vollzeit
-  - Requirements Engineer
-  - Systems Engineer
   - MBSE Engineer
   - Systemingenieur
+  - Automotive Systems Engineer
 
 search_keywords:
-  - Requirements Engineering
-  - Systems Engineering
   - Model Based Systems Engineering
   - MBSE
-  - System Architecture
-  - Mechanical Engineering
-  - Maschinenbau
-  - Systemtechnik
+  - Systems Engineering
+  - Requirements Engineering
+  - Automotive Systems Engineering
   - Funktionale Sicherheit
   - ISO 26262
   - SysML
   - DOORS
+  - V-Model
   - Validation Verification
-  - Automotive Engineering
 
 cv_skills:
   - Requirements Engineering
@@ -61,18 +57,37 @@ cv_skills:
   - FMEA
   - FTA
 
+matching:
+  diagnostics: true
+  semantic_rescue_skill_max: 35
+  semantic_rescue_semantic_min: 60
+  semantic_rescue_weight: 0.8
+  negative_keyword_penalty: 25
+  negative_keywords:
+    - marketing
+    - sales
+    - business development
+    - hr
+    - human resources
+    - finance
+    - accounting
+    - procurement
+    - purchasing
+    - customer support
+
 opportunity:
   role_keywords:
-    - requirements engineer
+    - model based systems engineering
+    - mbse engineer
     - systems engineer
-    - mbse
-    - system architect
-    - functional safety
-    - validation engineer
-    - verification engineer
-    - test engineer
-    - konstruktion
-    - ingenieur
+    - systemingenieur
+    - requirements engineer
+    - requirements engineering
+    - automotive systems engineer
+    - functional safety engineer
+    - sysml engineer
+    - v-model
+    - iso 26262
   prestige_companies:
     - webasto
     - bosch

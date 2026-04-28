@@ -250,6 +250,61 @@ matching:
     - diplomarbeit
     - forschungsarbeit
     - research thesis
+  negative_keyword_penalty: 25
+  negative_keywords:
+    - archive
+    - full text
+    - promotion
+    - studis
+    - researchportal
+    - karriere.at
+    - jobtensor
+    - careerjet
+    - jobsuche der ba
+    - jobsuche
+    - studium
+    - studiengang
+    - studieren
+    - vorlesung
+    - lehrstuhl
+    - lehrgang
+    - kurs
+    - workshop
+    - stellenangebot
+    - stellenangebote
+    - stellenbörse
+    - jobbörse
+    - job board
+    - gehalt
+    - salary
+    - course
+    - curriculum
+    - degree
+    - bachelor
+    - master of
+    - lecture
+    - seminar
+    - studiensuche
+    - jobsuche
+    - paper
+    - pdf
+    - whitepaper
+    - journal
+    - conference
+    - research
+    - study
+    - report
+    - analysis
+    - market size
+    - forecast
+    - webinar
+    - event
+    - blog
+    - news
+  role_score_floor: 65
+  role_score_penalty: 30
+  role_keyword_required: true
+  role_keyword_required_penalty: 35
   tech_keywords:
     - python
     - java

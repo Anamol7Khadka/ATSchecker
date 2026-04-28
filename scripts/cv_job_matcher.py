@@ -444,6 +444,29 @@ def match_cv_to_jobs(
     Returns list of MatchResult sorted by overall score (descending).
     """
     cfg = config if isinstance(config, dict) else _load_config_from_project_root()
+    matching = _matching_config(cfg)
+    matching_defaults = cfg.get("_matching_defaults", {}) if isinstance(cfg, dict) else {}
+
+    rescue_skill_max = float(matching.get("semantic_rescue_skill_max", 40))
+    rescue_semantic_min = float(matching.get("semantic_rescue_semantic_min", 50))
+    rescue_weight = float(matching.get("semantic_rescue_weight", 0.85))
+    diagnostics_enabled = bool(matching.get("diagnostics", False))
+    role_score_floor = float(matching.get("role_score_floor", 0))
+    role_score_penalty = float(matching.get("role_score_penalty", 0))
+    role_keyword_required = bool(matching.get("role_keyword_required", False))
+    role_keyword_required_penalty = float(matching.get("role_keyword_required_penalty", 0))
+    global_negatives = [
+        str(k).strip().lower()
+        for k in matching_defaults.get("negative_keywords", [])
+        if str(k).strip()
+    ]
+    local_negatives = [
+        str(k).strip().lower()
+        for k in matching.get("negative_keywords", [])
+        if str(k).strip()
+    ]
+    negative_keywords = list(dict.fromkeys(global_negatives + local_negatives))
+    negative_penalty = float(matching.get("negative_keyword_penalty", 25))
 
     if target_cities is None:
         raw_cities = cfg.get("cities", []) if isinstance(cfg, dict) else []
@@ -452,7 +475,6 @@ def match_cv_to_jobs(
         raw_types = cfg.get("job_types", []) if isinstance(cfg, dict) else []
         target_types = [str(t).strip() for t in raw_types if str(t).strip()]
     if not current_german_level:
-        matching = _matching_config(cfg)
         current_german_level = str(matching.get("default_german_level", "A2"))
     if desired_roles is None:
         desired_roles = []
@@ -498,26 +520,38 @@ def match_cv_to_jobs(
 
     def _score_one(job: JobPosting) -> MatchResult:
         job_text = f"{job.title} {job.description} {' '.join(job.tags or [])}".strip()
+        job_text_lower = job_text.lower()
         all_reasons = []
 
         # 1. Taxonomy-powered skill matching (35%)
         skill_score, matched, missing, skill_reasons = compute_skill_score(
             cv_skill_names, job_text
         )
+        skill_score_raw = skill_score
+        sem_score = None
+        sem_rescued = False
+        sem_tier = _semantic_matcher.tier if _semantic_matcher is not None else "none"
+
+        if _semantic_matcher is not None:
+            if diagnostics_enabled or skill_score < rescue_skill_max:
+                sem_score = _semantic_matcher.score(job_text)
 
         # Semantic rescue: if taxonomy found few matches, check semantic similarity
-        if skill_score < 40 and _semantic_matcher is not None:
-            sem_score = _semantic_matcher.score(job_text)
-            if sem_score > 50:
-                rescued_score = max(skill_score, sem_score * 0.85)
-                skill_reasons.append(f"Semantic rescue: {sem_score:.0f}% text similarity ({_semantic_matcher.tier})")
+        if sem_score is not None and skill_score < rescue_skill_max:
+            if sem_score > rescue_semantic_min:
+                rescued_score = max(skill_score, sem_score * rescue_weight)
+                skill_reasons.append(f"Semantic rescue: {sem_score:.0f}% text similarity ({sem_tier})")
                 skill_score = rescued_score
+                sem_rescued = True
 
         all_reasons.extend(skill_reasons)
 
         # 2. Role relevance (25%)
         role_score, role_reasons = compute_role_score(job, desired_roles, cv_skill_names)
         all_reasons.extend(role_reasons)
+        role_keyword_hit = False
+        if desired_roles:
+            role_keyword_hit = any(role.lower() in job_text_lower for role in desired_roles)
 
         # 3. Job type match (15%)
         type_score, type_reasons = compute_type_score(job, target_types)
@@ -540,6 +574,25 @@ def match_cv_to_jobs(
             job, current_german_level, config=cfg,
         )
 
+        negative_hits = []
+        if negative_keywords:
+            negative_hits = [kw for kw in negative_keywords if kw in job_text_lower]
+            if negative_hits:
+                warnings = list(warnings) + [
+                    "Negative keywords: {hits}".format(hits=", ".join(negative_hits[:3]))
+                ]
+
+        if diagnostics_enabled:
+            sem_display = f"{sem_score:.1f}" if sem_score is not None else "n/a"
+            warnings = list(warnings) + [
+                "diag: tier={tier} sem={sem} skill={skill:.1f} rescue={rescue}".format(
+                    tier=sem_tier,
+                    sem=sem_display,
+                    skill=skill_score_raw,
+                    rescue="yes" if sem_rescued else "no",
+                )
+            ]
+
         # Weighted total
         overall = (
             skill_score * W_SKILL
@@ -550,6 +603,19 @@ def match_cv_to_jobs(
             + title_sim * W_TITLE_SIM
             + lang_penalty
         )
+        if negative_hits:
+            overall -= negative_penalty
+        if role_score_floor and role_score < role_score_floor:
+            overall -= role_score_penalty
+            warnings = list(warnings) + [
+                "Low role relevance: {score:.1f}% (<{floor:.0f})".format(
+                    score=role_score,
+                    floor=role_score_floor,
+                )
+            ]
+        if role_keyword_required and desired_roles and not role_keyword_hit:
+            overall -= role_keyword_required_penalty
+            warnings = list(warnings) + ["Role keyword missing"]
         overall = max(0, min(100, overall))
 
         return MatchResult(

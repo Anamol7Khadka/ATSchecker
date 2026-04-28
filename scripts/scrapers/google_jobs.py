@@ -341,12 +341,13 @@ class GoogleJobsScraper(BaseScraper):
                 return results
             except Exception as exc:
                 last_error = exc
-                if is_rate_limit_error(exc):
-                    cooldown = record_rate_limit(engine, self.config, reason=str(exc))
+                exc_str = str(exc)
+                if is_rate_limit_error(exc) or "timed out" in exc_str.lower() or "connecttimeout" in exc_str.lower() or "connection error" in exc_str.lower():
+                    cooldown = record_rate_limit(engine, self.config, reason=exc_str)
                     if cooldown > 0:
-                        self.log(f"[{self.name}] {engine} cooldown {int(cooldown)}s after {label}: {exc}")
+                        self.log(f"[{self.name}] {engine} cooldown {int(cooldown)}s after {label} (timeout/limit)")
                     else:
-                        self.log(f"[{self.name}] {engine} rate-limit warning for {label}: {exc}")
+                        self.log(f"[{self.name}] {engine} rate-limit/timeout warning for {label}")
                     return []
                 if attempt >= retries:
                     break

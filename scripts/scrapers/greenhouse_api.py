@@ -29,23 +29,24 @@ class GreenhouseAPIScraper(BaseScraper):
 
     API_BASE = "https://boards-api.greenhouse.io/v1/boards"
 
-    # Known German tech companies using Greenhouse (auto-discovered slugs get added)
+    # Known German/European tech companies using Greenhouse (extensive list)
     DEFAULT_SLUGS = [
-        "celonis",
-        "personio",
-        "contentful",
-        "hellofreshgroup",
-        "n26",
-        "ecosia",
-        "flixbus",
-        "gorillas",
-        "deliveryhero",
-        "trade-republic",
-        "scalablecapital",
-        "sumup",
-        "sennder",
-        "forto",
-        "agile-robots",
+        # Berlin unicorns & scaleups
+        "celonis", "personio", "contentful", "hellofreshgroup",
+        "n26", "ecosia", "flixbus", "gorillas", "deliveryhero",
+        "trade-republic", "scalablecapital", "sumup", "sennder",
+        "forto", "agile-robots",
+        # More German tech
+        "wefox", "mambu", "commercetools", "aboutyou", "tier",
+        "taxfix", "raisin", "omio", "adjust", "solaris",
+        "babbel", "soundcloud", "trivago", "auto1group",
+        "enpal", "heycar", "finn", "coachhub",
+        # Automotive / Engineering
+        "continental", "infineon", "bmwgroup", "porsche",
+        "mercedes-benz-techinnovation", "zf",
+        # Enterprise
+        "sap", "sap-cx", "siemens-energy", "aleph-alpha",
+        "covestro", "evonik",
     ]
 
     SLUG_CACHE_FILE = ".greenhouse_slugs.json"

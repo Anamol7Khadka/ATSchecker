@@ -26,20 +26,21 @@ class LeverAPIScraper(BaseScraper):
 
     API_BASE = "https://api.lever.co/v0/postings"
 
-    # Known companies using Lever for German/European hiring
+    # Known companies using Lever for German/European hiring (extensive list)
     DEFAULT_SLUGS = [
-        "checkout",
-        "zenjob",
-        "omio",
-        "adjust",
-        "raisin",
-        "unu-motors",
-        "pitch",
-        "moss",
-        "taxfix",
-        "comtravo",
-        "grover",
-        "pleo",
+        # Fintech & payments
+        "checkout", "moss", "pleo", "raisin", "taxfix",
+        # Mobility & logistics
+        "omio", "unu-motors", "comtravo", "forto",
+        # HR / SaaS
+        "zenjob", "personio", "adjust", "pitch",
+        # Marketplace / ecommerce
+        "grover", "rebuy", "momox",
+        # Enterprise / Industrial
+        "siemens-disw", "bosch-connected",
+        # More Berlin tech
+        "contentful", "messagebird", "miro", "datadog",
+        "snyk", "gitlab", "grafana-labs",
     ]
 
     SLUG_CACHE_FILE = ".lever_slugs.json"

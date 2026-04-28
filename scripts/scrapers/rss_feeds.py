@@ -50,7 +50,7 @@ class RSSJobScraper(BaseScraper):
             if feed_url.endswith("/api/job-board-api"):
                 continue  # Skip Arbeitnow API (already have dedicated scraper)
             try:
-                feed_jobs = self._parse_rss_feed(feed_url, feed_name, city)
+                feed_jobs = self._parse_rss_feed(feed_url, feed_name, city, keywords)
                 for job in feed_jobs:
                     if job.url not in seen_urls:
                         seen_urls.add(job.url)
@@ -69,7 +69,7 @@ class RSSJobScraper(BaseScraper):
                             query=query.replace(" ", "+"),
                             city=city.replace(" ", "+"),
                         )
-                        feed_jobs = self._parse_rss_feed(url, "Indeed RSS", city)
+                        feed_jobs = self._parse_rss_feed(url, "Indeed RSS", city, keywords)
                         for job in feed_jobs:
                             if job.url not in seen_urls:
                                 seen_urls.add(job.url)
@@ -87,7 +87,7 @@ class RSSJobScraper(BaseScraper):
         return jobs
 
     def _parse_rss_feed(
-        self, url: str, source_name: str, default_city: str
+        self, url: str, source_name: str, default_city: str, keywords: List[str]
     ) -> List[JobPosting]:
         """Parse an RSS/Atom feed and extract job postings."""
         jobs = []
@@ -140,6 +140,17 @@ class RSSJobScraper(BaseScraper):
                 )
                 if city_match:
                     location = city_match.group(0)
+
+                # Filter by keyword
+                haystack = f"{title} {company} {description}".lower()
+                if not any(kw.lower() in haystack for kw in keywords[:10]):
+                    continue
+
+                # Filter by location (unless remote)
+                loc_lower = location.lower()
+                city_lower = default_city.lower()
+                if city_lower not in loc_lower and "remote" not in loc_lower and "germany" not in loc_lower and "deutschland" not in loc_lower:
+                    continue
 
                 # Parse date
                 posted_date = self._parse_date(pub_date)

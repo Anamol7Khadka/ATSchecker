@@ -26,7 +26,15 @@ class SmartRecruitersAPIScraper(BaseScraper):
         
         # Pull specific companies to target from profile hints, or use defaults
         hints = self.config.get("scraper_hints", {})
-        companies = ["bosch", "ubisoft", "visa", "square", "twitter", "linkedin"]
+        companies = [
+            # Major German employers using SmartRecruiters
+            "bosch", "siemens", "deutschebahn", "allianz",
+            "henkel", "bayer", "thyssenkrupp", "basf",
+            # Tech companies
+            "ubisoft", "visa", "spotify",
+            # Automotive
+            "schaeffler", "webasto", "mann-hummel",
+        ]
         
         if isinstance(hints, dict) and "ats_targets" in hints:
             ats_targets = hints["ats_targets"].get("smartrecruiters", [])

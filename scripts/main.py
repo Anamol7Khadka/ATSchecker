@@ -225,14 +225,20 @@ def cmd_match(config: dict):
             )
             refreshed = get_config()
             cv_skills = resolve_cv_skills(refreshed, fallback_skills=cv.skills)
+            desired_roles = (refreshed.get("opportunity", {}) or {}).get("role_keywords", [])
             matches = match_cv_to_jobs(
                 cv=cv,
                 jobs=jobs,
-                target_cities=config.get("cities", []),
-                target_types=config.get("job_types", []),
-                current_german_level=str(refreshed.get("matching", {}).get("default_german_level", "A2")),
+                target_cities=refreshed.get("cities", []),
+                target_types=refreshed.get("job_types", []),
+                current_german_level=str(
+                    refreshed.get("german_level")
+                    or refreshed.get("matching", {}).get("default_german_level", "A2")
+                ),
                 config=refreshed,
                 cv_skills_override=cv_skills,
+                desired_roles=desired_roles,
+                experience_level=refreshed.get("experience_level", "entry"),
             )
             all_matches.extend(matches)
             all_cv_skills.extend(cv_skills)
@@ -338,14 +344,20 @@ def cmd_scan(config: dict):
         if jobs:
             refreshed = get_config()
             cv_skills = resolve_cv_skills(refreshed, fallback_skills=cv.skills)
+            desired_roles = (refreshed.get("opportunity", {}) or {}).get("role_keywords", [])
             matches = match_cv_to_jobs(
                 cv=cv,
                 jobs=jobs,
-                target_cities=config.get("cities", []),
-                target_types=config.get("job_types", []),
-                current_german_level=str(refreshed.get("matching", {}).get("default_german_level", "A2")),
+                target_cities=refreshed.get("cities", []),
+                target_types=refreshed.get("job_types", []),
+                current_german_level=str(
+                    refreshed.get("german_level")
+                    or refreshed.get("matching", {}).get("default_german_level", "A2")
+                ),
                 config=refreshed,
                 cv_skills_override=cv_skills,
+                desired_roles=desired_roles,
+                experience_level=refreshed.get("experience_level", "entry"),
             )
             all_matches.extend(matches)
         all_cv_skills.extend(cv_skills)

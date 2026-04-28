@@ -60,6 +60,34 @@ NOISE_TEXT_HINTS = (
     "cv template",
     "lebenslauf",
 )
+# Domains that can NEVER contain real job postings (DDG garbage)
+GARBAGE_DOMAINS = {
+    # Porn / adult
+    "porn", "xxx", "xnxx", "xhamster", "pornhub", "xvideos", "redtube",
+    "youporn", "tube8", "fapvid", "tubepleasure", "colliderporn",
+    # App stores / downloads
+    "apkpure", "play.google", "apps.apple", "microsoft.com/store",
+    "win-rar", "download.cnet",
+    # Forums / Q&A (not job sites)
+    "vk.com", "reddit.com", "quora.com", "stackoverflow.com",
+    "win11forum", "windowsarea",
+    # Translation / reference
+    "translate.google", "deepl.com", "dict.cc", "linguee",
+    "lemedecin", "medicaments",
+    # Gaming / shopping
+    "smartgaming-shop", "steam", "epicgames",
+    # Museums / tourism
+    "museumexplorer", "thetrainpark", "wanderer",
+    # Social / video
+    "tubitv", "tiktok.com", "instagram.com", "facebook.com",
+    "twitter.com", "x.com", "youtube.com",
+    # Auth / SSO / accounts pages
+    "accounts.google", "login.microsoft", "sso.",
+    # Misc non-job
+    "fintiba", "bluetooths", "copilot.microsoft",
+    "hoebeginik", "ideenraum", "digitalstudioweb",
+    "presse.", "blog.", "hilfe.",
+}
 DIRECT_JOB_HINTS = (
     "career",
     "careers",
@@ -74,13 +102,19 @@ DIRECT_JOB_HINTS = (
 TRUSTED_SOURCE_HINTS = (
     "arbeitnow",
     "adzuna",
+    "arbeitsagentur",
     "companyportals",
     "ddg",
     "google",
+    "greenhouse",
     "indeed",
     "jobteaser",
+    "lever",
     "linkedin",
+    "nicheboards",
     "remoteok",
+    "smartrecruiters",
+    "sitemapminer",
     "stepstone",
     "xing",
 )
@@ -258,6 +292,8 @@ def assess_job_quality(job: JobPosting, config: Optional[dict] = None, stage: st
 
     if not normalized_url or not normalized_url.startswith(("http://", "https://")):
         reject_reason = "invalid_url"
+    elif any(gd in normalized_url.lower() for gd in GARBAGE_DOMAINS):
+        reject_reason = "garbage_domain"
     elif is_listing_page(title, normalized_url):
         reject_reason = "listing_page"
     elif any(hint in normalized_url.lower() for hint in NOISE_URL_HINTS):

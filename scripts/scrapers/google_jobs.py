@@ -295,8 +295,13 @@ class GoogleJobsScraper(BaseScraper):
         return False
 
     def _search_duckduckgo(self, query: str, max_results: int):
-        with DDGS() as ddgs:
-            rows = list(ddgs.text(query, max_results=max_results, region="de-de"))
+        try:
+            with DDGS(timeout=30) as ddgs:
+                rows = list(ddgs.text(query, max_results=max_results, region="de-de"))
+        except TypeError:
+            # Fallback for older DDGS versions without timeout support
+            with DDGS() as ddgs:
+                rows = list(ddgs.text(query, max_results=max_results, region="de-de"))
 
         out = []
         for r in rows:

@@ -5,6 +5,7 @@ Uses undetected-chromedriver to bypass Indeed's anti-bot detection.
 
 import time
 import re
+import warnings
 from datetime import datetime, timedelta
 from typing import List
 
@@ -22,6 +23,7 @@ try:
     from ddgs import DDGS
     DDG_AVAILABLE = True
 except ImportError:
+    warnings.filterwarnings("ignore", message=r"This package .* renamed to `ddgs`.*")
     try:
         from duckduckgo_search import DDGS
         DDG_AVAILABLE = True
@@ -271,8 +273,13 @@ class IndeedScraper(BaseScraper):
                 try:
                     with warnings.catch_warnings():
                         warnings.simplefilter("ignore")
-                        with DDGS() as ddgs:
-                            results = ddgs.text(query, max_results=15, region="de-de")
+                        try:
+                            with DDGS(timeout=30) as ddgs:
+                                results = ddgs.text(query, max_results=15, region="de-de")
+                        except TypeError:
+                            # Fallback for older DDGS versions without timeout support
+                            with DDGS() as ddgs:
+                                results = ddgs.text(query, max_results=15, region="de-de")
                     for r in results:
                         url = r.get("href", "")
                         if "indeed" not in url.lower():

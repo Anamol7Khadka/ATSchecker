@@ -5,6 +5,7 @@ and JavaScript-based DOM extraction for resilient scraping.
 """
 
 import time
+import warnings
 from datetime import datetime
 from typing import List
 from urllib.parse import quote_plus
@@ -22,6 +23,7 @@ try:
     from ddgs import DDGS
     DDG_AVAILABLE = True
 except ImportError:
+    warnings.filterwarnings("ignore", message=r"This package .* renamed to `ddgs`.*")
     try:
         from duckduckgo_search import DDGS
         DDG_AVAILABLE = True
@@ -210,7 +212,16 @@ class StepStoneScraper(BaseScraper):
 
                     # Scroll to load lazy content
                     for _ in range(3):
-                        driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+                        try:
+                            driver.execute_script("""
+                                if (document.body && document.body.scrollHeight) {
+                                    window.scrollTo(0, document.body.scrollHeight);
+                                } else if (document.documentElement && document.documentElement.scrollHeight) {
+                                    window.scrollTo(0, document.documentElement.scrollHeight);
+                                }
+                            """)
+                        except Exception:
+                            pass
                         time.sleep(1)
 
                     # Extract via JavaScript (resilient to React DOM changes)
@@ -267,8 +278,13 @@ class StepStoneScraper(BaseScraper):
                 try:
                     with warnings.catch_warnings():
                         warnings.simplefilter("ignore")
-                        with DDGS() as ddgs:
-                            results = ddgs.text(query, max_results=15, region="de-de")
+                        try:
+                            with DDGS(timeout=30) as ddgs:
+                                results = ddgs.text(query, max_results=15, region="de-de")
+                        except TypeError:
+                            # Fallback for older DDGS versions without timeout support
+                            with DDGS() as ddgs:
+                                results = ddgs.text(query, max_results=15, region="de-de")
                     for r in results:
                         url = r.get("href", "")
                         if "stepstone" not in url.lower():

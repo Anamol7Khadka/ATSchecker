@@ -52,7 +52,7 @@ from config_state import (
 
 # New: Database and profile system
 import database as db
-from profile import (
+from user_profile import (
     extract_profile_from_cv,
     suggest_roles,
     detect_experience_level,

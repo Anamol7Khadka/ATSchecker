@@ -25,6 +25,7 @@ try:
     from ddgs import DDGS
     DDG_AVAILABLE = True
 except ImportError:
+    warnings.filterwarnings("ignore", message=r"This package .* renamed to `ddgs`.*")
     try:
         from duckduckgo_search import DDGS
         DDG_AVAILABLE = True
@@ -236,8 +237,13 @@ class ArbeitsagenturScraper(BaseScraper):
                     try:
                         with warnings.catch_warnings():
                             warnings.simplefilter("ignore")
-                            with DDGS() as ddgs:
-                                results = list(ddgs.text(query, max_results=15, region="de-de"))
+                            try:
+                                with DDGS(timeout=30) as ddgs:
+                                    results = list(ddgs.text(query, max_results=15, region="de-de"))
+                            except TypeError:
+                                # Fallback for older DDGS versions without timeout support
+                                with DDGS() as ddgs:
+                                    results = list(ddgs.text(query, max_results=15, region="de-de"))
                         for r in results:
                             url = r.get("href", "")
                             title = r.get("title", "")

@@ -214,6 +214,8 @@ behavior:
 
 matching:
   default_german_level: A2
+  # Keep embeddings opt-in to avoid slow startup from heavyweight model imports.
+  semantic_embeddings_enabled: false
   language_level_map:
     a1: 1
     a2: 2

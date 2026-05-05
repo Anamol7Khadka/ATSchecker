@@ -4,6 +4,7 @@ Falls back to DuckDuckGo search + site:xing.com if login wall is encountered.
 """
 
 import time
+import warnings
 from datetime import datetime
 from typing import List
 from urllib.parse import quote_plus
@@ -21,6 +22,7 @@ try:
     from ddgs import DDGS
     DDG_AVAILABLE = True
 except ImportError:
+    warnings.filterwarnings("ignore", message=r"This package .* renamed to `ddgs`.*")
     try:
         from duckduckgo_search import DDGS
         DDG_AVAILABLE = True
@@ -218,8 +220,13 @@ class XingScraper(BaseScraper):
                 query = f"{jt} {kw} {city} Germany xing.com jobs"
 
                 try:
-                    with DDGS() as ddgs:
-                        results = list(ddgs.text(query, max_results=20, region="de-de"))
+                    try:
+                        with DDGS(timeout=30) as ddgs:
+                            results = list(ddgs.text(query, max_results=20, region="de-de"))
+                    except TypeError:
+                        # Fallback for older DDGS versions without timeout support
+                        with DDGS() as ddgs:
+                            results = list(ddgs.text(query, max_results=20, region="de-de"))
                 except Exception as e:
                     print(f"[{self.name}] DuckDuckGo fallback failed: {e}")
                     time.sleep(2)

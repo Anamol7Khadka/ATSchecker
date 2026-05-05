@@ -37,7 +37,7 @@ from skill_taxonomy import (
 try:
     import sys
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    from profile import detect_experience_level
+    from user_profile import detect_experience_level
     PROFILE_AVAILABLE = True
 except ImportError:
     PROFILE_AVAILABLE = False
@@ -500,10 +500,15 @@ def match_cv_to_jobs(
         try:
             yaml_skills = cfg.get("cv_skills", []) if isinstance(cfg, dict) else []
             yaml_keywords = cfg.get("search_keywords", []) if isinstance(cfg, dict) else []
+            semantic_embeddings_enabled = bool(matching.get("semantic_embeddings_enabled", False))
+            semantic_embeddings_enabled = semantic_embeddings_enabled or os.environ.get(
+                "ATS_ENABLE_SENTENCE_EMBEDDINGS", ""
+            ).strip().lower() in {"1", "true", "yes", "on"}
             _semantic_matcher = SemanticMatcher(
                 cv_text=cv.raw_text,
                 yaml_skills=[str(s) for s in yaml_skills] if yaml_skills else cv_skill_names,
                 yaml_keywords=[str(k) for k in yaml_keywords] if yaml_keywords else [],
+                enable_embeddings=semantic_embeddings_enabled,
             )
             print(f"[Matcher] Semantic matcher initialized (tier: {_semantic_matcher.tier})")
         except Exception as e:

@@ -36,10 +36,12 @@ class SemanticMatcher:
         cv_text: str,
         yaml_skills: List[str],
         yaml_keywords: List[str],
+        enable_embeddings: bool = False,
     ):
         self.cv_text = cv_text or ""
         self.yaml_skills = yaml_skills or []
         self.yaml_keywords = yaml_keywords or []
+        self.enable_embeddings = enable_embeddings
 
         # Build combined profile document
         self._profile_doc = self._build_profile_doc()
@@ -60,7 +62,7 @@ class SemanticMatcher:
     def _init_tier(self):
         """Detect and initialize the best available method."""
         # Tier 1: Sentence Transformers
-        if self._try_init_embeddings():
+        if self.enable_embeddings and self._try_init_embeddings():
             self.tier = "embeddings"
             return
 

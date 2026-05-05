@@ -1,6 +1,29 @@
 profile:
   cv_file: uploaded_cv.pdf
   cv_skills_extracted:
-  - R
+  - S3
+  - aws
+  - data science
+  - deep learning
+  - django
+  - docker
+  - ec2
+  - elasticsearch
+  - git
+  - hadoop
+  - java
+  - linux
+  - llm
+  - machine learning
+  - maven
+  - numpy
+  - pandas
+  - pyspark
+  - python
+  - pytorch
   - rag
-  updated_at: '2026-04-28T09:55:49.067684Z'
+  - react
+  - scikit-learn
+  - spark
+  - sql
+  updated_at: '2026-05-05T05:45:12.351050Z'

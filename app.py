@@ -22,6 +22,7 @@ import shutil
 import subprocess
 import sys
 import threading
+import warnings
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -31,6 +32,12 @@ from flask import Flask, render_template, jsonify, request
 # Add scripts/ to Python path
 SCRIPT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "scripts")
 sys.path.insert(0, SCRIPT_DIR)
+
+warnings.filterwarnings(
+    "ignore",
+    message=r".*duckduckgo_search.*renamed to `ddgs`.*",
+    category=RuntimeWarning,
+)
 
 from cv_parser import parse_cv
 from ats_checker import run_ats_check
@@ -1209,16 +1216,20 @@ def matches_api():
     _ensure_cv_loaded()
 
     matches = state.get("matches", [])
+    jobs_snapshot = list(state.get("jobs", []))
+    scraping = state.get("scrape_status", {}).get("running", False)
 
     # If no matches computed yet and we have CV + jobs, run matching now.
-    if not matches and state.get("cv_data") and state.get("jobs"):
+    if not matches and state.get("cv_data") and jobs_snapshot and not scraping:
         if not state.get("matching_status", {}).get("running"):
             state["matching_status"] = {"running": True, "message": "Matching jobs..."}
             try:
                 _run_matching(state["cv_data"])
                 matches = state.get("matches", [])
-            finally:
                 state["matching_status"] = {"running": False, "message": ""}
+            except Exception as e:
+                state["matching_status"] = {"running": False, "message": f"Error: {e}"}
+                print(f"[Matcher] Error: {e}")
 
     gap = state.get("gap_analysis")
     gap_dict = None
@@ -1249,9 +1260,12 @@ def matches_api():
                 job_id = 0
             d["job_id"] = job_id
             results.append(d)
-    elif state.get("jobs"):
+    elif jobs_snapshot:
         # No CV loaded yet — return raw jobs as unscored entries
-        for job in state["jobs"][:limit]:
+        reason = "Upload CV to see match scores"
+        if state.get("cv_data") and scraping:
+            reason = "Matching will run after scraping completes"
+        for job in jobs_snapshot[:limit]:
             results.append({
                 "job_title": job.title,
                 "company": job.company or "(unknown)",
@@ -1263,7 +1277,7 @@ def matches_api():
                 "overall_score": 0,
                 "matched_skills": [],
                 "missing_skills": [],
-                "match_reasons": ["Upload CV to see match scores"],
+                "match_reasons": [reason],
                 "warnings": [],
                 "job_id": 0,
             })

@@ -12,6 +12,12 @@ from urllib.parse import quote_plus
 
 from scrapers.base import BaseScraper, JobPosting, is_listing_page
 
+warnings.filterwarnings(
+    "ignore",
+    message=r".*duckduckgo_search.*renamed to `ddgs`.*",
+    category=RuntimeWarning,
+)
+
 try:
     import undetected_chromedriver as uc
     from selenium.webdriver.common.by import By
@@ -23,7 +29,6 @@ try:
     from ddgs import DDGS
     DDG_AVAILABLE = True
 except ImportError:
-    warnings.filterwarnings("ignore", message=r"This package .* renamed to `ddgs`.*")
     try:
         from duckduckgo_search import DDGS
         DDG_AVAILABLE = True

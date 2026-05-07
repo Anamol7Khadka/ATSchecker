@@ -9,7 +9,7 @@ from html import unescape
 from typing import Any, Dict, Iterable, Optional
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
-from scrapers.base import JobPosting, is_listing_page
+from scrapers.base import JobPosting, is_listing_page, is_profile_or_people_page
 
 
 TRACKING_KEYS = {
@@ -41,13 +41,6 @@ GENERIC_COMPANIES = {
     "web",
 }
 NOISE_URL_HINTS = (
-    "/in/",
-    "/profile",
-    "/profiles",
-    "/resume",
-    "/resumes",
-    "/salary",
-    "/salaries",
     "curriculum-vitae",
     "karrierebibel",
     "lebenslauf",
@@ -70,7 +63,7 @@ GARBAGE_DOMAINS = {
     "win-rar", "download.cnet",
     # Forums / Q&A (not job sites)
     "vk.com", "reddit.com", "quora.com", "stackoverflow.com",
-    "win11forum", "windowsarea",
+    "zhihu.com", "baidu.com", "win11forum", "windowsarea",
     # Translation / reference
     "translate.google", "deepl.com", "dict.cc", "linguee",
     "lemedecin", "medicaments",
@@ -106,6 +99,7 @@ TRUSTED_SOURCE_HINTS = (
     "companyportals",
     "ddg",
     "google",
+    "glassdoor",
     "greenhouse",
     "indeed",
     "jobteaser",
@@ -294,6 +288,8 @@ def assess_job_quality(job: JobPosting, config: Optional[dict] = None, stage: st
         reject_reason = "invalid_url"
     elif any(gd in normalized_url.lower() for gd in GARBAGE_DOMAINS):
         reject_reason = "garbage_domain"
+    elif is_profile_or_people_page(normalized_url):
+        reject_reason = "noise_url"
     elif is_listing_page(title, normalized_url):
         reject_reason = "listing_page"
     elif any(hint in normalized_url.lower() for hint in NOISE_URL_HINTS):

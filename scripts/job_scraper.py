@@ -16,7 +16,7 @@ import yaml
 from rapidfuzz import fuzz
 
 from quality_gate import apply_quality_gate, normalize_url
-from scrapers.base import JobPosting, is_listing_page
+from scrapers.base import JobPosting, is_glassdoor_job_detail, is_listing_page
 from scrapers.arbeitnow import ArbeitnowScraper
 from scrapers.google_jobs import GoogleJobsScraper
 from scrapers.linkedin import LinkedInScraper
@@ -267,6 +267,13 @@ def _check_url(job: JobPosting, scraping_config: dict = None) -> Dict[str, str]:
     cap = float(scraping_config.get("retry_backoff_max_seconds", 20.0))
     jitter = float(scraping_config.get("request_jitter_seconds", 1.0))
 
+    def _blocked_result() -> Dict[str, str]:
+        return {
+            "keep": is_glassdoor_job_detail(job.url),
+            "status": "blocked",
+            "url": normalize_url(job.url),
+        }
+
     for attempt in range(retries + 1):
         try:
             headers = _verify_headers(scraping_config)
@@ -289,10 +296,10 @@ def _check_url(job: JobPosting, scraping_config: dict = None) -> Dict[str, str]:
                     status = "redirected" if final_url != normalize_url(job.url) else "alive"
                     return {"keep": True, "status": status, "url": final_url}
                 if resp.status_code in (403, 429):
-                    return {"keep": False, "status": "blocked", "url": normalize_url(job.url)}
+                    return _blocked_result()
                 return {"keep": False, "status": "dead", "url": normalize_url(job.url)}
             if resp.status_code in (403, 429):
-                return {"keep": False, "status": "blocked", "url": normalize_url(job.url)}
+                return _blocked_result()
             return {"keep": False, "status": "dead", "url": normalize_url(job.url)}
         except requests.RequestException:
             if attempt >= retries:

@@ -37,11 +37,13 @@ class SemanticMatcher:
         yaml_skills: List[str],
         yaml_keywords: List[str],
         enable_embeddings: bool = False,
+        diagnostics: bool = False,
     ):
         self.cv_text = cv_text or ""
         self.yaml_skills = yaml_skills or []
         self.yaml_keywords = yaml_keywords or []
         self.enable_embeddings = enable_embeddings
+        self.diagnostics = diagnostics
 
         # Build combined profile document
         self._profile_doc = self._build_profile_doc()
@@ -59,6 +61,10 @@ class SemanticMatcher:
         ]
         return " ".join(parts)
 
+    def _log(self, message: str) -> None:
+        if self.diagnostics:
+            print(f"[SemanticMatcher] {message}")
+
     def _init_tier(self):
         """Detect and initialize the best available method."""
         # Tier 1: Sentence Transformers
@@ -74,6 +80,7 @@ class SemanticMatcher:
         # Tier 3: BM25 + rapidfuzz (always available)
         self._init_bm25_fuzzy()
         self.tier = "bm25_fuzzy"
+        self._log("Using BM25 fuzzy fallback.")
 
     def _try_init_embeddings(self) -> bool:
         """Try to load sentence-transformers model."""
@@ -86,10 +93,13 @@ class SemanticMatcher:
                 convert_to_tensor=True,
                 show_progress_bar=False,
             )
+            self._log("Sentence-transformers embeddings enabled.")
             return True
         except ImportError:
+            self._log("Sentence-transformers not installed; embeddings disabled.")
             return False
-        except Exception:
+        except Exception as exc:
+            self._log(f"Sentence-transformers init failed: {exc}")
             return False
 
     def _try_init_ollama(self) -> bool:
@@ -108,6 +118,7 @@ class SemanticMatcher:
                     break
 
             if not self._ollama_embed_model:
+                self._log("Ollama available but no embedding model found.")
                 return False
 
             # Compute profile embedding
@@ -117,8 +128,10 @@ class SemanticMatcher:
             )
             self._ollama_profile_vector = response["embeddings"][0]
             self._ollama = ollama
+            self._log(f"Ollama embeddings enabled ({self._ollama_embed_model}).")
             return True
-        except Exception:
+        except Exception as exc:
+            self._log(f"Ollama embeddings unavailable: {exc}")
             return False
 
     def _init_bm25_fuzzy(self):

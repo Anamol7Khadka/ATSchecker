@@ -509,6 +509,7 @@ def match_cv_to_jobs(
                 yaml_skills=[str(s) for s in yaml_skills] if yaml_skills else cv_skill_names,
                 yaml_keywords=[str(k) for k in yaml_keywords] if yaml_keywords else [],
                 enable_embeddings=semantic_embeddings_enabled,
+                diagnostics=diagnostics_enabled,
             )
             print(f"[Matcher] Semantic matcher initialized (tier: {_semantic_matcher.tier})")
         except Exception as e:

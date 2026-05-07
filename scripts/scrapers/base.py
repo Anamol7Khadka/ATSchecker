@@ -10,6 +10,52 @@ from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse, parse_qs
 
 
+PROFILE_URL_HINTS = (
+    "in",
+    "people",
+    "person",
+    "profile",
+    "profiles",
+    "users",
+    "members",
+    "resume",
+    "resumes",
+    "salary",
+    "salaries",
+)
+
+
+def is_profile_or_people_page(url: str) -> bool:
+    """Return True for profile, people, resume, and salary pages."""
+    try:
+        parsed = urlparse(url)
+        segments = [segment for segment in parsed.path.lower().split("/") if segment]
+    except Exception:
+        segments = [segment for segment in str(url or "").lower().split("/") if segment]
+    return any(segment in PROFILE_URL_HINTS for segment in segments)
+
+
+def is_glassdoor_job_detail(url: str) -> bool:
+    """Return True only for direct Glassdoor job-detail pages."""
+    try:
+        parsed = urlparse(url)
+        netloc = parsed.netloc.lower()
+        path = parsed.path.lower()
+        qs = parse_qs(parsed.query)
+    except Exception:
+        return False
+
+    if "glassdoor." not in netloc:
+        return False
+
+    return "/job-listing/" in path and (
+        "jl" in qs
+        or "/jv_" in path
+        or "-jv_" in path
+        or path.endswith(".htm")
+    )
+
+
 # ── Listing-page filter ──────────────────────────────────────────────
 # Patterns that indicate a DDG result is a search/listing page rather
 # than an individual job posting.
@@ -42,6 +88,9 @@ _SEARCH_PATH_SEGMENTS = {"/search", "/jobs/search", "/job-search", "/jobsuche"}
 def is_listing_page(title: str, url: str) -> bool:
     """Return True if a DDG result looks like a search/listing page
     rather than an individual job posting."""
+    if is_glassdoor_job_detail(url):
+        return False
+
     # ── Title check ──
     if title and _LISTING_TITLE_PATTERNS.search(title):
         return True
@@ -65,6 +114,12 @@ def is_listing_page(title: str, url: str) -> bool:
             # Detail pages look like /jobs/view/12345
             if "/jobs/search" in path or ("/jobs" in path and "/view/" not in path and not re.search(r"/jobs/\d", path)):
                 return True
+
+        # Glassdoor listing/company pages. Direct job pages use /job-listing/.
+        if "glassdoor." in parsed.netloc:
+            if not is_glassdoor_job_detail(url):
+                if path.startswith("/jobs") or path.startswith("/job-search") or "jobs-e" in path:
+                    return True
 
         # Indeed listing pages
         if "indeed" in parsed.netloc:

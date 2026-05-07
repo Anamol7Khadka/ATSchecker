@@ -9,9 +9,18 @@ import time
 import warnings
 from datetime import datetime
 from typing import List
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urljoin, urlparse
 
-from scrapers.base import BaseScraper, JobPosting, is_listing_page
+import requests
+from bs4 import BeautifulSoup
+
+from scrapers.base import (
+    BaseScraper,
+    JobPosting,
+    is_glassdoor_job_detail,
+    is_listing_page,
+    is_profile_or_people_page,
+)
 from scrapers.rate_limiter import (
     can_query,
     get_engine_snapshot,
@@ -41,10 +50,23 @@ except ImportError:
 class GoogleJobsScraper(BaseScraper):
     name = "SearchAggregator"
 
+    _DEFAULT_HTTP_USER_AGENTS = [
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) Gecko/20100101 Firefox/124.0",
+    ]
+
+    MEINESTADT_DOMAIN = "jobs.meinestadt.de"
+    MEINESTADT_DETAIL_PATH_HINTS = ("/standard", "/premium", "/topjob")
+
     NOISE_URL_HINTS = [
         "linkedin.com/in/",
         "xing.com/profile",
-        "/salaries/",
+        "zhihu.com",
+        "baidu.com",
+        "reddit.com",
+        "quora.com",
         "karrierebibel",
         "lebenslauf",
         "curriculum-vitae",
@@ -57,6 +79,78 @@ class GoogleJobsScraper(BaseScraper):
         "lebenslauf",
         "profile",
     ]
+
+    KNOWN_SOURCE_DETAILS = {
+        "LinkedIn",
+        "StepStone",
+        "Indeed",
+        "XING",
+        "Jobteaser",
+        "Glassdoor",
+        "Monster",
+        "Karriere",
+        "MeineStadt",
+        "OVGU",
+        "Fraunhofer",
+        "DLR",
+    }
+
+    DIRECT_JOB_URL_HINTS = (
+        "career",
+        "careers",
+        "job",
+        "jobs",
+        "job-listing",
+        "jobid",
+        "karriere",
+        "stellen",
+        "stellenangebot",
+        "vacancy",
+        "opening",
+        "position",
+        "workdayjobs",
+        "greenhouse.io",
+        "lever.co",
+        "smartrecruiters",
+    )
+
+    JOB_TEXT_HINTS = (
+        "apply",
+        "bewerben",
+        "career",
+        "careers",
+        "hiring",
+        "internship",
+        "job",
+        "jobs",
+        "masterarbeit",
+        "praktikum",
+        "stelle",
+        "stellen",
+        "thesis",
+        "vacancy",
+        "werkstudent",
+        "working student",
+    )
+
+    ROLE_TEXT_HINTS = (
+        "ai",
+        "analytics",
+        "backend",
+        "cloud",
+        "data",
+        "developer",
+        "devops",
+        "engineer",
+        "engineering",
+        "informatik",
+        "machine learning",
+        "ml",
+        "python",
+        "research",
+        "software",
+        "systems",
+    )
 
     # Comprehensive list of German job sites, company portals, and niche boards
     JOB_SITES = [
@@ -191,6 +285,7 @@ class GoogleJobsScraper(BaseScraper):
 
         jobs = []
         seen_urls = set()
+        expanded_listing_urls = set()
         max_keywords = int(self.config.get("max_keywords_per_city", 6))
         max_job_types = int(self.config.get("max_job_types", 6))
         max_per_query = 20
@@ -241,13 +336,39 @@ class GoogleJobsScraper(BaseScraper):
                                 continue
                             if url in seen_urls:
                                 continue
-                            if self._is_noise_result(url, title):
+                            if self._is_noise_result(url, title, snippet):
                                 continue
 
                             source_detail = self._detect_source(url)
                             if not source_detail:
                                 continue
+                            if source_detail == "Glassdoor" and not is_glassdoor_job_detail(url):
+                                continue
+                            if (
+                                source_detail not in self.KNOWN_SOURCE_DETAILS
+                                and not self._has_strong_job_signal(url, title, snippet)
+                            ):
+                                continue
                             if is_listing_page(title, url):
+                                if self._is_meinestadt_listing(url) and url not in expanded_listing_urls:
+                                    expanded_listing_urls.add(url)
+                                    listing_jobs = self._extract_meinestadt_jobs(
+                                        url=url,
+                                        city=city,
+                                        job_type=jt,
+                                        keyword=kw,
+                                        engine=engine,
+                                        source_detail=source_detail,
+                                    )
+                                    for listing_job in listing_jobs:
+                                        if listing_job.url in seen_urls:
+                                            continue
+                                        seen_urls.add(listing_job.url)
+                                        jobs.append(listing_job)
+                                        if len(jobs) >= self.max_results:
+                                            break
+                                    if len(jobs) >= self.max_results:
+                                        break
                                 continue
 
                             if not title or len(title) < 5:
@@ -283,16 +404,37 @@ class GoogleJobsScraper(BaseScraper):
 
         return jobs
 
-    def _is_noise_result(self, url: str, title: str) -> bool:
+    def _is_noise_result(self, url: str, title: str, snippet: str = "") -> bool:
         url_l = url.lower()
         title_l = (title or "").lower()
 
+        if is_profile_or_people_page(url):
+            return True
         if any(h in url_l for h in self.NOISE_URL_HINTS):
             return True
         if any(h in title_l for h in self.NOISE_TITLE_HINTS):
             return True
+        if "glassdoor." in url_l and not is_glassdoor_job_detail(url):
+            return True
+        if not self._has_strong_job_signal(url, title, snippet):
+            source_detail = self._detect_source(url)
+            if source_detail not in self.KNOWN_SOURCE_DETAILS:
+                return True
 
         return False
+
+    @classmethod
+    def _has_strong_job_signal(cls, url: str, title: str = "", snippet: str = "") -> bool:
+        hay_url = url.lower()
+        hay_text = f"{title or ''} {snippet or ''}".lower()
+
+        if any(hint in hay_url for hint in cls.DIRECT_JOB_URL_HINTS):
+            return True
+
+        return (
+            any(hint in hay_text for hint in cls.JOB_TEXT_HINTS)
+            and any(hint in hay_text for hint in cls.ROLE_TEXT_HINTS)
+        )
 
     def _search_duckduckgo(self, query: str, max_results: int):
         try:
@@ -372,6 +514,86 @@ class GoogleJobsScraper(BaseScraper):
     def _polite_pause(self):
         jitter = float(self.config.get("request_jitter_seconds", 1.0))
         time.sleep(self.delay + random.uniform(0, jitter))
+
+    def _http_headers(self) -> dict:
+        use_pool = self.config.get("rotate_user_agents", True)
+        configured = self.config.get("user_agents", []) if use_pool else []
+        agents = configured or self._DEFAULT_HTTP_USER_AGENTS
+        return {
+            "User-Agent": random.choice(agents),
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "de-DE,de;q=0.9,en;q=0.8",
+        }
+
+    @classmethod
+    def _is_meinestadt_listing(cls, url: str) -> bool:
+        try:
+            parsed = urlparse(url)
+            if cls.MEINESTADT_DOMAIN not in parsed.netloc.lower():
+                return False
+            path = parsed.path.lower()
+            if any(hint in path for hint in cls.MEINESTADT_DETAIL_PATH_HINTS):
+                return False
+            return "/az" in path or "/jobs" in path or path.endswith("/stellenangebote")
+        except Exception:
+            return False
+
+    def _extract_meinestadt_jobs(
+        self,
+        url: str,
+        city: str,
+        job_type: str,
+        keyword: str,
+        engine: str,
+        source_detail: str,
+    ) -> List[JobPosting]:
+        jobs: List[JobPosting] = []
+        try:
+            resp = requests.get(url, timeout=12, headers=self._http_headers())
+            if resp.status_code != 200:
+                return jobs
+            soup = BeautifulSoup(resp.text, "html.parser")
+
+            seen = set()
+            for a in soup.select("a[href]"):
+                href = a.get("href", "").strip()
+                if not href:
+                    continue
+                full_url = urljoin(url, href)
+                parsed = urlparse(full_url)
+                if self.MEINESTADT_DOMAIN not in parsed.netloc.lower():
+                    continue
+                if not any(hint in parsed.path for hint in self.MEINESTADT_DETAIL_PATH_HINTS):
+                    continue
+                if "id" not in parse_qs(parsed.query):
+                    continue
+                if full_url in seen:
+                    continue
+
+                title = " ".join(a.stripped_strings).strip()
+                if not title or len(title) < 5:
+                    title = self._extract_title_from_url(full_url, job_type, keyword)
+
+                seen.add(full_url)
+                jobs.append(
+                    JobPosting(
+                        title=title,
+                        company=f"(via {source_detail})",
+                        location=city,
+                        url=full_url,
+                        description=f"Found via listing page: {keyword} {city}",
+                        source=f"{engine}→{source_detail}",
+                        job_type=job_type,
+                        posted_date=datetime.now().isoformat(),
+                    )
+                )
+
+                if len(jobs) >= self.max_results:
+                    break
+        except Exception:
+            return jobs
+
+        return jobs
 
     @staticmethod
     def _detect_source(url: str) -> str:
